@@ -5,6 +5,7 @@ import { FX } from './fx.js';
 import { sfx, music } from './audio.js';
 import { CFG } from './config.js';
 import { TAL, rollTalismans, prismEvery, COMBO_TIERS, comboTier } from './perks.js';
+import { DAILY, dailyLevel } from './daily.js';
 
 // 固定参数（改了会影响关卡布局，不放进调参面板）
 // 触屏设备：珠子放大约 40%，同时按比例减少珠子数量，让珠串总长与关卡节奏保持不变
@@ -360,9 +361,10 @@ export class Game {
   loadLevel(i, mode = 'play') {
     this.clearLevel();
     // i < 0 为无尽模式：复制一份，难度参数会随"重"数改变
-    const lv = i < 0 ? { ...ENDLESS, ...endlessStage(1) } : LEVELS[i];
+    const lv = i === DAILY ? dailyLevel() : i < 0 ? { ...ENDLESS, ...endlessStage(1) } : LEVELS[i];
     this.lv = lv;
     this.endless = !!lv.endless;
+    this.daily = !!lv.daily;
     this.stage = 1;
     this.levelIndex = i;
     this.tracks = trackDefs(lv).map((def, k) => ({
@@ -432,7 +434,8 @@ export class Game {
   start(i) {
     this.loadLevel(i, 'play');
     this.ui.setLevel(i);
-    if (this.endless) this.ui.hint(`无尽长夜：每 ${ENDLESS_STAGE} 秒升一重，速度越来越快，坚持得越久分越高`, 5000);
+    if (this.daily) this.ui.hint(`每日一灯 · ${this.lv.rule.name}：${this.lv.rule.desc}`, 6000);
+    else if (this.endless) this.ui.hint(`无尽长夜：每 ${ENDLESS_STAGE} 秒升一重，速度越来越快，坚持得越久分越高`, 5000);
     else if (this.boss) this.ui.hint('消除珠子化作灯火攻击年兽 · 用额头宝珠的颜色直击它', 6000);
     else if (this.tracks.length > 1) this.ui.hint('双轨来袭：两条珠串都不能让它们进井', 4000);
   }
@@ -701,7 +704,8 @@ export class Game {
     this.fx.burst(p.x + dx * 10, p.y + dy * 10, tint, 4, 0.45, true);
     this.cur = this.next;
     this.next = this.pickColor();
-    if (this.perk('prism') && ++this.prismN >= prismEvery(this.perk('prism'))) { this.prismN = 0; this.next = RAINBOW; }
+    const prismN = this.perk('prism') ? prismEvery(this.perk('prism')) : this.lv.prism;
+    if (prismN && ++this.prismN >= prismN) { this.prismN = 0; this.next = RAINBOW; }
     this.updateAmmoView();
     this.cooldown = CFG.fireCooldown * (this.feverT > 0 ? 0.8 : 1) * (1 - 0.2 * this.perk('swift'));
     this.shooter.recoil = 1;
@@ -891,7 +895,7 @@ export class Game {
 
   // 道具：计时、过期、定期在某条珠串上生成
   updatePowers(dt) {
-    if (this.state !== 'play' || this.tracks.some((tr) => tr.rush)) return;
+    if (this.state !== 'play' || this.tracks.some((tr) => tr.rush) || this.lv.noPower) return;
     let active = 0;
     for (const b of this.allBalls()) {
       if (!b.power) continue;
@@ -1038,7 +1042,7 @@ export class Game {
     // 化险为夷：珠串已逼近古井时打出消除
     const close = this.state === 'play' && this.lead(ball.tr) > 0.86;
     if (close) run.closeCalls++;
-    let pts = (n * 10 * level + (level > 1 ? 40 * level * (1 + 0.5 * this.perk('chain')) : 0)) * mult;
+    let pts = (n * 10 * level + (level > 1 ? 40 * level * (1 + 0.5 * this.perk('chain')) * (this.lv.chainMul || 1) : 0)) * mult;
     if (fromShot && this.shotCombo >= 3) pts += this.shotCombo * 15 * mult;
     pts = Math.round(pts * this.comboMul());
     this.addScore(pts);
@@ -1165,6 +1169,7 @@ export class Game {
 
   addScore(pts) {
     if (this.endless) pts = Math.round(pts * (1 + 0.25 * this.perk('toad')) * 1.5 ** this.perk('gamble'));
+    if (this.lv.scoreMul) pts = Math.round(pts * this.lv.scoreMul);
     this.score += pts;
     this.ui.setScore(this.score);
   }
@@ -1181,7 +1186,7 @@ export class Game {
   // ================= 灯火燎原（Fever） =================
   addFever(amount) {
     if (this.feverT > 0 || CFG.feverNeed <= 0) return;
-    this.fever += (amount * (1 + 0.3 * this.perk('blaze'))) / CFG.feverNeed;
+    this.fever += (amount * (1 + 0.3 * this.perk('blaze'))) / (CFG.feverNeed * (this.lv.feverMul || 1));
     if (this.fever >= 1) this.startFever();
   }
 

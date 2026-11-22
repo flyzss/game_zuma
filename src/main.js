@@ -7,11 +7,13 @@ import { initDevPanel } from './devpanel.js';
 import { COLORS, RAINBOW, SKINS, SKIN_CANVAS } from './textures.js';
 import { store, meta, ACHIEVEMENTS, CHALLENGES, chalState } from './meta.js';
 import { TAL, COMBO_TIERS } from './perks.js';
+import { DAILY, dailyLevel, prevDayKey } from './daily.js';
+import { drawShareCard, SHARE_URL } from './share.js';
 
 const $ = (id) => document.getElementById(id);
 const CN = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十'];
-const lvLabel = (i) => (i < 0 ? '无尽模式' : `第${CN[i] || i + 1}关`);
-const lvName = (i) => (i < 0 ? ENDLESS.name : LEVELS[i].name);
+const lvLabel = (i) => (i === DAILY ? '每日一灯' : i < 0 ? '无尽模式' : `第${CN[i] || i + 1}关`);
+const lvName = (i) => (i === DAILY ? dailyLevel().name : i < 0 ? ENDLESS.name : LEVELS[i].name);
 const stageLabel = (n) => `第${CN[n - 1] || n}重`;
 const fmtTime = (t) => `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
 
@@ -69,8 +71,8 @@ const GOLD_DEFS = '<svg width="0" height="0" style="position:absolute"><defs><li
 
 const ui = {
   setLevel(i) {
-    $('lvNo').textContent = i < 0 ? '无尽' : lvLabel(i);
-    $('lvName').textContent = i < 0 ? stageLabel(1) : LEVELS[i].name;
+    $('lvNo').textContent = i === DAILY ? '每日' : i < 0 ? '无尽' : lvLabel(i);
+    $('lvName').textContent = i === DAILY ? lvName(i) : i < 0 ? stageLabel(1) : LEVELS[i].name;
   },
   setStage(n) { $('lvName').textContent = stageLabel(n); },
   // 首领血条：name 为 null 时隐藏
@@ -245,6 +247,7 @@ const ui = {
   },
 
   onWin(i, score, stars, stats) {
+    if (i === DAILY) { this.onDaily(true, score, stars, stats); return; }
     const prevBest = store.get('best' + i, 0);
     const best = Math.max(score, prevBest);
     store.set('best' + i, best);
@@ -266,9 +269,15 @@ const ui = {
         ${last ? '' : '<button class="btn-red" data-act="next">下一关</button>'}
         <div class="btn-row">
           <button class="btn-ink" data-act="retry">再来一次</button>
+          <button class="btn-ink" data-act="share">晒战绩</button>
           <button class="btn-ink" data-act="menu">选择关卡</button>
         </div>
       </div>`));
+    this.lastShare = {
+      kind: lvLabel(i), title: LEVELS[i].name, score, stars,
+      lines: [['最高连锁', `×${stats.bestChain || 1}`], ['最高连击', game.run.bestCombo]],
+      badge: comboBadge(),
+    };
     const svgs = $('screen').querySelectorAll('.stars-row svg');
     for (let k = 0; k < stars; k++) {
       setTimeout(() => { svgs[k]?.classList.add('on'); sfx.star(k); }, 650 + k * 300);
@@ -278,6 +287,7 @@ const ui = {
   },
 
   onLose(i, score, stats) {
+    if (i === DAILY) { this.onDaily(false, score, 0, stats); return; }
     if (i < 0) { this.onEndless(score, stats); return; }
     const res = meta.finish(i, game.run, { won: false, score, stars: 0, time: Math.round(game.levelTime) });
     this.show(this.scroll(`
@@ -313,10 +323,50 @@ const ui = {
       ${coinLine(res)}
       <div class="actions">
         <button class="btn-red" data-act="retry">再战一夜</button>
-        <button class="btn-ink" data-act="menu">返回首页</button>
+        <div class="btn-row">
+          <button class="btn-ink" data-act="share">晒战绩</button>
+          <button class="btn-ink" data-act="menu">返回首页</button>
+        </div>
       </div>`));
+    this.lastShare = {
+      kind: '无尽模式', title: `坚持到${stageLabel(st.stage)}`, score, stars: null,
+      lines: [['坚持', fmtTime(st.time)], ['灵符', `${Object.values(st.perks || {}).reduce((a, b) => a + b, 0)} 道`]],
+      badge: comboBadge(),
+    };
     if (isNew) setTimeout(() => sfx.star(2), 700);
     countUp($('resScore'), score, 900, 400);
+    afterResult(res);
+  },
+
+  // 每日一灯结算：过关有星，首胜发奖励并累计连续天数
+  onDaily(won, score, stars, stats) {
+    const lv = game.lv;
+    const res = meta.finish(DAILY, game.run, { won, score, stars, time: Math.round(game.levelTime) });
+    this.show(this.scroll(`
+      <div class="stamp ${won ? '' : 'grey'}">${won ? (res.dailyFirst ? '点亮' : '再燃') : '熄'}</div>
+      <div class="s-level">每日一灯 · ${lv.rule.name}</div>
+      <h2 class="s-title">${won ? lv.baseName : '灯火熄灭'}</h2>
+      <div class="s-sub">${lv.rule.desc}</div>
+      ${won ? `<div class="stars-row">${STAR}${STAR}${STAR}</div>` : ''}
+      <div class="s-score" id="resScore">0</div>
+      <div class="s-stats">今日最高 <b>${res.dailyBest.toLocaleString()}</b> · 连续 <b>${res.streak} 夜</b>${res.dailyFirst ? ' · <b>今夜首胜</b>' : ''}</div>
+      ${streakRow(res.streak, res.dailyFirst)}
+      ${coinLine(res)}
+      <div class="actions">
+        <button class="btn-red" data-act="retry">${won ? '再刷一次' : '再试一次'}</button>
+        <div class="btn-row">
+          ${won ? '<button class="btn-ink" data-act="share">晒战绩</button>' : ''}
+          <button class="btn-ink" data-act="menu">返回首页</button>
+        </div>
+      </div>`));
+    this.lastShare = {
+      kind: `每日一灯 · ${new Date().getMonth() + 1}月${new Date().getDate()}日`, title: lv.name, score, stars,
+      lines: [['连续', `${res.streak} 夜`], ['最高连锁', `×${stats.bestChain || 1}`]],
+      badge: comboBadge(),
+    };
+    const svgs = $('screen').querySelectorAll('.stars-row svg');
+    for (let k = 0; k < stars; k++) setTimeout(() => { svgs[k]?.classList.add('on'); sfx.star(k); }, 650 + k * 300);
+    countUp($('resScore'), score, 900, 500);
     afterResult(res);
   },
 
@@ -348,7 +398,9 @@ const ui = {
       <div class="title-screen">
         <div class="brand"><h1 class="logo">萤灯连珠</h1><span class="seal">夜游</span></div>
         <p class="tagline">一夜灯会 · 连珠成火</p>
+        ${festivalHtml(total)}
         <div class="lantern-map">${rows.join('')}</div>
+        ${dailyHtml()}
         <button class="endless-btn" data-act="play" data-lv="-1">
           <span class="e-title">无尽模式</span>
           <span class="e-sub">${store.get('endlessBest', 0) ? `最高分 <b>${store.get('endlessBest', 0).toLocaleString()}</b> · 最远${stageLabel(store.get('endlessStage', 1))}` : '珠串永不停歇，看你能坚持多久'}</span>
@@ -377,6 +429,7 @@ const ui = {
       </div>`, false);
     this.menuOpen = true;
     this.page = 'menu';
+    animateFestival();
   },
 
   // —— 灯谱：成就图鉴 + 灯会志 ——
@@ -461,6 +514,103 @@ const ui = {
 };
 
 const COIN = '<i class="coin"></i>';
+
+// —— 灯会点亮：星星 + 挑战 + 成就 折算成一条街的灯笼 ——
+const FEST_N = 24;
+const FEST_NAMES = ['冷冷清清', '华灯初上', '灯火渐明', '人声鼎沸', '火树银花', '不夜之城'];
+let festNew = [0, 0];
+function festivalHtml(stars) {
+  const pts = stars + meta.chalDone() + meta.achCount();
+  const max = LEVELS.length * 6 + ACHIEVEMENTS.length;
+  const lit = Math.min(FEST_N, Math.floor((pts / max) * FEST_N + 1e-9));
+  const prev = Math.min(meta.P.lit || 0, lit);
+  festNew = [prev, lit];
+  const name = FEST_NAMES[Math.min(FEST_NAMES.length - 1, Math.floor((lit / FEST_N) * (FEST_NAMES.length - 1) + 1e-9))];
+  const lamps = Array.from({ length: FEST_N }, (_, k) => {
+    const sag = Math.sin((k / (FEST_N - 1)) * Math.PI) * 14;
+    return `<i class="${k < prev ? 'on' : ''}" style="--sag:${sag.toFixed(1)}px;--h:${(k * 37) % 360}"></i>`;
+  }).join('');
+  return `<div class="festival" title="星星、挑战和成就都会点亮灯会">
+    <div class="fest-lamps">${lamps}</div>
+    <div class="fest-cap">灯会 · <b>${name}</b> <span>${lit} / ${FEST_N} 盏</span></div>
+  </div>`;
+}
+function animateFestival() {
+  const [from, to] = festNew;
+  if (to <= from) return;
+  const lamps = $('screen').querySelectorAll('.fest-lamps i');
+  for (let k = from; k < to; k++) {
+    // 一次点亮很多盏（老存档第一次打开）时加快节奏，最多 3 秒放完
+    const gap = Math.min(260, 3000 / (to - from));
+    setTimeout(() => { lamps[k]?.classList.add('on', 'pop'); if (k - from < 6 || k === to - 1) sfx.star(Math.min(2, k - from)); }, 900 + (k - from) * gap);
+  }
+  meta.P.lit = to;
+  store.set('profile', meta.P);
+}
+
+// —— 首页的每日一灯入口 ——
+function dailyHtml() {
+  const d = meta.daily();
+  const lv = dailyLevel();
+  const next = d.lastDone === prevDayKey(d.day) ? d.streak + 1 : 1;
+  const side = d.done
+    ? `<span class="d-st">今夜已点亮</span><span>今日最高 <b>${d.best.toLocaleString()}</b></span>`
+    : `<span class="d-st">首胜 ${COIN}<b>+${100 + Math.min(next, 7) * 20}</b></span><span>${d.streak ? `已连续 ${d.streak} 夜` : '每天零点换新'}</span>`;
+  return `<button class="daily-btn ${d.done ? 'done' : ''}" data-act="play" data-lv="${DAILY}">
+    <span class="d-seal">${d.done ? '已燃' : '今夜'}</span>
+    <span class="d-txt"><b>每日一灯</b><span class="d-rule">${lv.rule.name} · ${lv.baseName}</span><small>${lv.rule.desc}</small></span>
+    <span class="d-side">${side}</span>
+  </button>`;
+}
+
+// 七夜连续进度：一排小灯
+function streakRow(streak, fresh) {
+  const n = Math.min(streak, 7);
+  return `<div class="streak">${Array.from({ length: 7 }, (_, k) => `<i class="${k < n ? 'on' : ''} ${fresh && k === n - 1 ? 'new' : ''}">${k + 1}</i>`).join('')}<span>${streak >= 7 ? '七夜灯会 · 奖励封顶' : `连续 7 夜奖励最高`}</span></div>`;
+}
+
+function comboBadge() {
+  const c = game.run.bestCombo;
+  let t = -1;
+  COMBO_TIERS.forEach((T, i) => { if (c >= T.n) t = i; });
+  return t >= 0 ? `连击段位 · ${COMBO_TIERS[t].name}` : '';
+}
+
+// —— 晒战绩 ——
+function openShare() {
+  const d = ui.lastShare;
+  if (!d) return;
+  const canvas = drawShareCard({ ...d, skin: meta.P.skin });
+  const url = canvas.toDataURL('image/png');
+  const box = $('shareBox');
+  box.innerHTML = `<div class="share-inner">
+    <img src="${url}" alt="战绩卡">
+    <p>${isTouch ? '长按图片保存，发给好友一起来玩' : '保存图片，发给好友一起来玩'}</p>
+    <div class="share-acts">
+      <a class="btn-red" href="${url}" download="萤灯连珠战绩.png">保存图片</a>
+      ${navigator.share ? '<button class="btn-gold" data-share="send">分享</button>' : ''}
+      <button class="btn-ghost" data-share="close">关闭</button>
+    </div>
+  </div>`;
+  box.classList.add('show');
+  box._canvas = canvas;
+  sfx.powerAppear();
+}
+$('shareBox').addEventListener('click', async (e) => {
+  const box = $('shareBox');
+  const b = e.target.closest('[data-share]');
+  if (!b) { if (e.target === box) box.classList.remove('show'); return; }
+  if (b.dataset.share === 'close') box.classList.remove('show');
+  if (b.dataset.share === 'send') {
+    try {
+      const blob = await new Promise((r) => box._canvas.toBlob(r, 'image/png'));
+      const file = new File([blob], '萤灯连珠战绩.png', { type: 'image/png' });
+      const data = { title: '萤灯连珠', text: `我在《萤灯连珠》拿了 ${ui.lastShare.score.toLocaleString()} 分，来比比？`, url: SHARE_URL };
+      if (navigator.canShare?.({ files: [file] })) data.files = [file];
+      await navigator.share(data);
+    } catch { /* 用户取消分享 */ }
+  }
+});
 const CN_LV = '壹贰叁肆伍';
 
 // 已得灯符：选符界面底部的小印章条
@@ -598,6 +748,7 @@ $('screen').addEventListener('click', (e) => {
   else if (act === 'menu') toMenu();
   else if (act === 'resume') game.resume();
   else if (act === 'codex') ui.showCodex();
+  else if (act === 'share') openShare();
   else if (act === 'shop') ui.showShop();
   else if (act === 'home') ui.showMenu();
   else if (act === 'buy') {

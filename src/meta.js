@@ -1,6 +1,7 @@
 // 局外系统：存档、成就「灯谱」、每关挑战、灯币与灯灵外观
 import { LEVELS } from './levels.js';
 import { SKINS } from './textures.js';
+import { DAILY, dayKey, prevDayKey } from './daily.js';
 
 export const store = {
   get(k, d) {
@@ -21,10 +22,12 @@ function defaults() {
   const life = {};
   for (const k of LIFE_KEYS) life[k] = 0;
   life.powers = {};
-  return { coins: 0, life, ach: {}, chal: {}, skins: ['orange'], skin: 'orange', seen: 0 };
+  return { coins: 0, life, ach: {}, chal: {}, skins: ['orange'], skin: 'orange', seen: 0, lit: 0,
+    daily: { day: '', best: 0, done: false, streak: 0, lastDone: '', total: 0 } };
 }
 const P = Object.assign(defaults(), store.get('profile', {}));
 P.life = Object.assign(defaults().life, P.life);
+P.daily = Object.assign(defaults().daily, P.daily);
 const save = () => store.set('profile', P);
 
 const totalStars = () => LEVELS.reduce((a, _, i) => a + store.get('stars' + i, 0), 0);
@@ -82,13 +85,20 @@ export const ACHIEVEMENTS = [
   A('gem_100', '驱傩逐兽', '百发百中', '累计直击年兽宝珠 100 次', 150, (c) => c.sum('gemHits') >= 100),
 
   // —— 无尽长夜 ——
-  A('endless_5', '无尽长夜', '长夜漫漫', '无尽模式坚持到第五重', 60, (c) => c.level < 0 && c.run.stage >= 5),
-  A('endless_10', '无尽长夜', '彻夜不眠', '无尽模式坚持到第十重（奖励：夜明灯）', 150, (c) => c.level < 0 && c.run.stage >= 10),
-  A('endless_15', '无尽长夜', '不夜之天', '无尽模式坚持到第十五重', 300, (c) => c.level < 0 && c.run.stage >= 15),
+  A('endless_5', '无尽长夜', '长夜漫漫', '无尽模式坚持到第五重', 60, (c) => c.level === -1 && c.run.stage >= 5),
+  A('endless_10', '无尽长夜', '彻夜不眠', '无尽模式坚持到第十重（奖励：夜明灯）', 150, (c) => c.level === -1 && c.run.stage >= 10),
+  A('endless_15', '无尽长夜', '不夜之天', '无尽模式坚持到第十五重', 300, (c) => c.level === -1 && c.run.stage >= 15),
   A('perk_first', '无尽长夜', '灵符初成', '在无尽模式里选下第一道灵符', 20, (c) => c.run.perks >= 1),
   A('perk_8', '无尽长夜', '符箓满身', '一局无尽模式里选下 8 道灵符', 150, (c) => c.run.perks >= 8),
-  A('gamble_3', '无尽长夜', '孤注一掷', '把博险符叠满三层', 200, (c) => c.level < 0 && (c.perks?.gamble || 0) >= 3),
-  A('endless_50k', '无尽长夜', '灯火通宵', '无尽模式单局 50,000 分', 200, (c) => c.level < 0 && c.score >= 50000),
+  A('gamble_3', '无尽长夜', '孤注一掷', '把博险符叠满三层', 200, (c) => c.level === -1 && (c.perks?.gamble || 0) >= 3),
+  A('endless_50k', '无尽长夜', '灯火通宵', '无尽模式单局 50,000 分', 200, (c) => c.level === -1 && c.score >= 50000),
+
+  // —— 每日一灯 ——
+  A('daily_1', '每日一灯', '今夜有约', '完成一次每日一灯', 30, () => P.daily.total >= 1),
+  A('daily_3', '每日一灯', '三夜连游', '连续 3 天完成每日一灯', 80, () => P.daily.streak >= 3),
+  A('daily_7', '每日一灯', '七夜灯会', '连续 7 天完成每日一灯', 300, () => P.daily.streak >= 7),
+  A('daily_30', '每日一灯', '夜夜笙歌', '累计 30 天完成每日一灯', 500, () => P.daily.total >= 30),
+  A('daily_3star', '每日一灯', '一夜三星', '在每日一灯里拿到三星', 60, (c) => c.end?.won && c.level === DAILY && c.end.stars >= 3),
 
   // —— 灯坊珍藏 ——
   A('skin_1', '灯坊珍藏', '新灯初换', '在灯坊买下第一盏灯', 20, () => P.skins.length > 1),
@@ -194,8 +204,9 @@ export const meta = {
     } else if (level >= 0) {
       res.chal = CHALLENGES[level].map((ch, k) => ({ text: ch.text, done: chalState(level)[k], isNew: false }));
     }
+    if (level === DAILY) this.finishDaily(end, res);
     // 灯币：分数 + 星数（过关）或少量安慰（失败）；无尽模式按重数
-    if (level < 0) res.parts.unshift(['长夜', Math.round(end.score / 250) + (run.stage - 1) * 10]);
+    if (level === -1) res.parts.unshift(['长夜', Math.round(end.score / 250) + (run.stage - 1) * 10]);
     else if (end.won) res.parts.unshift(['过关', Math.round(end.score / 200) + end.stars * 15]);
     else res.parts.unshift(['辛苦', Math.round(end.score / 500)]);
     res.coins = res.parts.reduce((a, p) => a + p[1], 0);
@@ -215,6 +226,33 @@ export const meta = {
     res.unlocked.push(...this.check(this.ctx(level, {}, { ...end, level }, end.score)));
     save();
     return res;
+  },
+
+  // 今天的每日一灯状态（跨天自动重置）
+  daily() {
+    const d = P.daily, today = dayKey();
+    if (d.day !== today) {
+      d.day = today; d.best = 0; d.done = false;
+      // 断了一天以上，连续天数归零（显示用；真正累加在完成时）
+      if (d.lastDone && d.lastDone !== prevDayKey(today)) d.streak = 0;
+      save();
+    }
+    return d;
+  },
+
+  finishDaily(end, res) {
+    const d = this.daily();
+    d.best = Math.max(d.best, end.score);
+    res.dailyBest = d.best;
+    if (end.won && !d.done) {
+      d.done = true;
+      d.streak = d.lastDone === prevDayKey(d.day) ? d.streak + 1 : 1;
+      d.lastDone = d.day;
+      d.total++;
+      res.dailyFirst = true;
+      res.parts.push(['每日首胜', 100 + Math.min(d.streak, 7) * 20]);
+    }
+    res.streak = d.streak;
   },
 
   buy(id) {

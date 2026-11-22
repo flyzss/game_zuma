@@ -840,3 +840,99 @@ body.boss #combo { top: calc(max(10px, env(safe-area-inset-top)) + 128px); }
   .talisman { min-height: 220px; }
   .tl-ch { width: 60px; height: 60px; font-size: 44px; }
 }
+
+/* ============ 灯会点亮：首页顶部的一串小灯 ============ */
+.festival { width: min(640px, 100%); margin-top: 14px; animation: rise .8s .15s both; }
+.fest-lamps { position: relative; display: flex; justify-content: space-between; padding: 0 6px; height: 40px; }
+.fest-lamps::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 18px;
+  border-bottom: 1.5px solid rgba(217, 164, 65, .55); border-radius: 0 0 50% 50% / 0 0 100% 100%;
+}
+.fest-lamps i {
+  position: relative; width: 12px; height: 16px; margin-top: calc(4px + var(--sag)); border-radius: 45%;
+  background: rgba(120, 110, 160, .28); box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .25);
+  transition: background .4s, box-shadow .4s;
+}
+.fest-lamps i::before { content: ''; position: absolute; left: 50%; top: -6px; width: 1px; height: 6px; background: rgba(217, 164, 65, .5); }
+.fest-lamps i.on {
+  background: radial-gradient(circle at 40% 35%, #fff6d0, hsl(calc(20 + var(--h) * .1), 95%, 58%) 60%, hsl(calc(5 + var(--h) * .08), 85%, 40%));
+  box-shadow: 0 0 10px hsla(30, 100%, 60%, .85), 0 0 22px hsla(30, 100%, 55%, .4);
+}
+.fest-lamps i.pop { animation: lampPop .5s cubic-bezier(.3, 1.8, .5, 1); }
+@keyframes lampPop { from { transform: scale(2); filter: brightness(2); } }
+.fest-cap { margin-top: 2px; font-size: 13px; letter-spacing: 3px; color: var(--muted); }
+.fest-cap b { font-family: var(--f-brush); font-weight: 400; font-size: 18px; color: var(--gold); letter-spacing: 2px; }
+.fest-cap span { font-family: var(--f-num); font-size: 12px; letter-spacing: 1px; margin-left: 6px; }
+
+/* ============ 首页：每日一灯 ============ */
+.daily-btn {
+  margin-top: 30px; width: min(440px, 100%); padding: 12px 14px; cursor: pointer;
+  display: flex; align-items: center; gap: 12px; text-align: left;
+  color: var(--text); font-family: var(--f-ui);
+  background: linear-gradient(120deg, rgba(200, 60, 30, .5), rgba(80, 20, 10, .6));
+  border: 1.5px solid rgba(255, 170, 110, .65); border-radius: 14px;
+  box-shadow: 0 0 24px rgba(255, 110, 60, .25), inset 0 1px 0 rgba(255, 255, 255, .12);
+  animation: rise .8s .25s both, dailyGlow 2.6s ease-in-out 1.2s infinite;
+  transition: transform .12s, filter .15s;
+}
+.daily-btn:hover { filter: brightness(1.12); }
+.daily-btn:active { transform: translateY(2px); }
+.daily-btn.done { background: linear-gradient(120deg, rgba(120, 80, 30, .4), rgba(40, 24, 10, .55)); border-color: var(--line); animation: rise .8s .25s both; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1); }
+@keyframes dailyGlow { 50% { box-shadow: 0 0 36px rgba(255, 120, 60, .45), inset 0 1px 0 rgba(255, 255, 255, .12); } }
+.d-seal {
+  width: 46px; height: 46px; flex: none; display: grid; place-items: center; writing-mode: vertical-rl;
+  font-family: var(--f-brush); font-size: 20px; line-height: 1; color: #fff1e0;
+  background: linear-gradient(150deg, #e2412f, #9c1912); border-radius: 6px;
+  box-shadow: inset 0 0 0 2px rgba(255, 220, 200, .5), 0 2px 8px rgba(0, 0, 0, .4); transform: rotate(-5deg);
+}
+.daily-btn.done .d-seal { background: linear-gradient(150deg, #ffcf5a, #b8701a); color: #4a1d05; }
+.d-txt { flex: 1; display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.d-txt b { font-family: var(--f-brush); font-weight: 400; font-size: 26px; letter-spacing: 5px; color: #ffe3c8; line-height: 1.1; }
+.d-rule { font-size: 14px; color: var(--gold-hi); letter-spacing: 1px; }
+.d-txt small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.d-side { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.d-side .d-st { font-size: 14px; color: var(--gold-hi); }
+.d-side b { font-family: var(--f-num); font-weight: 800; color: var(--gold-hi); }
+.daily-btn + .endless-btn { margin-top: 12px; }
+
+/* 结算：七夜连续 */
+.streak { margin-top: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; }
+.streak i {
+  width: 26px; height: 30px; border-radius: 45%; display: grid; place-items: center;
+  font-style: normal; font-family: var(--f-num); font-weight: 700; font-size: 12px; color: rgba(90, 60, 30, .45);
+  border: 1.5px dashed rgba(90, 60, 30, .35);
+}
+.streak i.on { color: #fff3d6; border: 0; background: radial-gradient(circle at 40% 35%, #ffe08a, #e2552a 70%); box-shadow: 0 2px 6px rgba(200, 80, 20, .45); }
+.streak i.new { animation: stampIn .45s 1.3s cubic-bezier(.3, 1.6, .5, 1) both; }
+.streak span { width: 100%; text-align: center; font-size: 12px; color: var(--ink-soft); letter-spacing: 1px; }
+
+/* 结算按钮行放三个时缩小字距 */
+.btn-row:has(> :nth-child(3)) .btn-ink { letter-spacing: 1px; font-size: 15px; }
+
+/* ============ 晒战绩弹窗 ============ */
+#shareBox {
+  position: fixed; inset: 0; z-index: 45; display: grid; place-items: center; padding: 16px;
+  background: rgba(3, 4, 12, .82); backdrop-filter: blur(4px);
+  opacity: 0; pointer-events: none; transition: opacity .3s; overflow-y: auto;
+}
+#shareBox.show { opacity: 1; pointer-events: auto; }
+.share-inner { display: flex; flex-direction: column; align-items: center; gap: 12px; width: min(400px, 100%); }
+.share-inner img { width: 100%; max-height: 68vh; object-fit: contain; border-radius: 10px; box-shadow: 0 20px 50px rgba(0, 0, 0, .7), 0 0 0 1px var(--line); }
+#shareBox.show .share-inner img { animation: pop .4s cubic-bezier(.2, 1.3, .4, 1); }
+.share-inner p { font-size: 13px; color: var(--muted); letter-spacing: 2px; }
+.share-acts { display: flex; gap: 10px; width: 100%; }
+.share-acts > * { flex: 1; display: grid; place-items: center; text-decoration: none; }
+.share-acts .btn-red { height: 46px; font-size: 20px; letter-spacing: 3px; }
+.btn-gold { height: 46px; border-radius: 10px; cursor: pointer; font-family: var(--f-brush); font-size: 20px; letter-spacing: 3px; color: #2a1405;
+  background: linear-gradient(180deg, #ffe08a, #e0a23a); border: 1.5px solid #fff1c2; }
+.btn-ghost { height: 46px; border-radius: 10px; cursor: pointer; font-size: 16px; letter-spacing: 3px; color: var(--text);
+  background: rgba(255, 255, 255, .06); border: 1.5px solid var(--line); }
+
+@media (max-width: 600px) {
+  .festival { margin-top: 10px; }
+  .fest-lamps { height: 34px; padding: 0 2px; }
+  .fest-lamps i { width: 9px; height: 12px; }
+  .daily-btn { padding: 10px 10px; gap: 8px; }
+  .d-seal { width: 40px; height: 40px; font-size: 17px; }
+  .d-txt b { font-size: 22px; letter-spacing: 3px; }
+}
