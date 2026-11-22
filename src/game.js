@@ -53,7 +53,7 @@ export function trackDefs(lv) {
 const newRun = () => ({
   shots: 0, misses: 0, swaps: 0, matches: 0, removed: 0, bestChain: 0, bestCombo: 0, bestBurst: 0,
   powers: {}, powerCount: 0, fevers: 0, clears: 0, closeCalls: 0, gemHits: 0, stage: 1, maxLead: 0,
-  maxTier: -1, perks: 0,
+  maxTier: -1, perks: 0, revives: 0,
 });
 
 export class Game {
@@ -206,6 +206,102 @@ export class Game {
     if (this.shooter) {
       this.shooter.lantern.texture = TEX.skins?.[id] || TEX.lantern;
     }
+  }
+
+  setBallSkin(id) { if (TEX.ballSets?.[id]) TEX.balls = TEX.ballSets[id]; }
+  setTrail(id) { this.trailId = id || 'plain'; }
+
+  // 弹道拖尾：燎原时统一是火焰，平时按装备的样式
+  emitTrail(p) {
+    const fx = this.fx, x = p.x, y = p.y;
+    if (this.feverT > 0) { fx.trail(x, y, 0xff9a3c, 1.6); return; }
+    const tint = COLORS[p.color].tint;
+    switch (this.trailId) {
+      case 'firefly':
+        fx.trail(x, y, tint, 0.8);
+        if (Math.random() < 0.55) {
+          fx._add(TEX.glow, x + (Math.random() - 0.5) * 20, y + (Math.random() - 0.5) * 20, {
+            tint: Math.random() < 0.6 ? 0xd9ff8f : 0xfff3a0, vx: (Math.random() - 0.5) * 30, vy: -10 - Math.random() * 30,
+            max: 0.9 + Math.random() * 0.6, s0: 0.16, s1: 0.04, a0: 0.95,
+          });
+        }
+        break;
+      case 'petal':
+        fx.trail(x, y, 0xff9cc4, 0.7);
+        if (Math.random() < 0.5) {
+          const sp = fx._add(TEX.petal, x, y, {
+            tint: Math.random() < 0.5 ? 0xffffff : 0xffb3d1, vx: (Math.random() - 0.5) * 80, vy: (Math.random() - 0.5) * 60,
+            max: 1 + Math.random() * 0.6, s0: 0.45 + Math.random() * 0.3, s1: 0.2, a0: 0.95, grav: 90, drag: 2, spin: (Math.random() - 0.5) * 8,
+          });
+          sp.s.blendMode = PIXI.BLEND_MODES.NORMAL;
+        }
+        break;
+      case 'gold':
+        fx.trail(x, y, 0xffd85a, 1);
+        for (let k = 0; k < 2; k++) {
+          fx._add(TEX.spark, x + (Math.random() - 0.5) * 16, y + (Math.random() - 0.5) * 16, {
+            tint: Math.random() < 0.7 ? 0xffd85a : 0xffffff, vx: (Math.random() - 0.5) * 60, vy: 20 + Math.random() * 40,
+            max: 0.5 + Math.random() * 0.4, s0: 0.22 + Math.random() * 0.2, s1: 0, spin: 10, grav: 120,
+          });
+        }
+        break;
+      case 'dragon':
+        fx.trail(x, y, Math.random() < 0.5 ? 0xff8a2e : 0xff3d1e, 1.7);
+        if (Math.random() < 0.7) fx.ember(x + (Math.random() - 0.5) * 18, y + (Math.random() - 0.5) * 18);
+        break;
+      default:
+        fx.trail(x, y, tint, 1);
+    }
+  }
+
+  // ================= 灯油续燃（复活） =================
+  // 珠串进井时先暂停，交给界面问玩家要不要花灯币续燃
+  revive() {
+    if (this.state !== 'revive') return;
+    this.revives++;
+    this.run.revives = this.revives;
+    // 火焰烧掉靠近井口的珠子（不计分、不触发道具），再让珠串倒流
+    for (const tr of this.tracks) {
+      const L = tr.path.length, B = tr.balls;
+      let i = B.length;
+      while (i > 0 && B[i - 1].s > L * 0.7) i--;
+      const burn = B.splice(i);
+      burn.forEach((b, k) => {
+        this.fx.burst(b.x, b.y, 0xff8a2e, 8, 1.1);
+        this.toGhost(b, k * 0.03, 1.2);
+      });
+      tr.danger = 0;
+    }
+    this.reverseT = 3;
+    this.slowT = Math.max(this.slowT, 6);
+    this.state = 'play';
+    this.ui.close();
+    this.fx.text(500, 460, '灯油续燃', { size: 100, fill: ['#fffbe6', '#ffb02e', '#ff4d2e'], stroke: '#3a0a02', dur: 1.6, rise: 30, font: 'brush' });
+    this.fx.ring(this.sx, this.sy, 0xffb347, 5, 0.8);
+    this.ui.flash('rgba(255,170,60,0.5)');
+    this.shake(14);
+    this.setHitStop(0.15);
+    sfx.fever();
+    this.refreshAmmo();
+    this.emit('revive');
+  }
+
+  giveUp() {
+    if (this.state !== 'revive') return;
+    this.state = 'play';
+    this.ui.close();
+    this.loseGame();
+  }
+
+  loseGame() {
+    const T = this.tracks;
+    this.run.maxLead = Math.max(...T.map((tr) => tr.maxLead));
+    this.state = 'lose';
+    this.endTimer = 0;
+    this.shake(14);
+    this.endFever();
+    sfx.lose();
+    this.fx.text(500, 470, '灯火将熄', { size: 84, fill: ['#ffd6dc', '#ff5a6e'], stroke: '#2a0610', dur: 2, rise: 30, font: 'brush' });
   }
 
   // 所有轨道上的珠子（只读遍历用）
@@ -406,6 +502,7 @@ export class Game {
     this.prismN = 0;
     this.chooseT = 0;
     this.choices = null;
+    this.revives = 0;
     this.ui.setCombo?.(0, -1);
     this.bestChain = 0;
     this.removedCount = 0;
@@ -728,7 +825,7 @@ export class Game {
   update(dt) {
     this.t += dt;
     this.updateFireflies(dt);
-    if (this.state === 'paused' || this.state === 'choose' || !this.tracks) { sfx.roll(0); return; }
+    if (this.state === 'paused' || this.state === 'choose' || this.state === 'revive' || !this.tracks) { sfx.roll(0); return; }
     if (this.chooseT > 0 && this.state === 'play') {
       this.chooseT -= dt;
       if (this.chooseT <= 0) { this.openChoice(); return; }
@@ -1642,7 +1739,7 @@ export class Game {
       }
       p.view.position.set(p.x, p.y);
       p.body.rotation += dt * 14;
-      this.fx.trail(p.x, p.y, this.feverT > 0 ? 0xff9a3c : COLORS[p.color].tint, this.feverT > 0 ? 1.6 : 1);
+      this.emitTrail(p);
       if (hitBoss) {
         this.shotHitsBoss(p);
         p.view.destroy({ children: true });
@@ -1896,13 +1993,12 @@ export class Game {
     if (this.state === 'play') {
       const lost = T.find((tr) => tr.balls.length && tr.balls[tr.balls.length - 1].s >= tr.path.length);
       if (lost) {
-        this.run.maxLead = Math.max(...T.map((tr) => tr.maxLead));
-        this.state = 'lose';
-        this.endTimer = 0;
-        this.shake(14);
-        this.endFever();
-        sfx.lose();
-        this.fx.text(500, 470, '灯火将熄', { size: 84, fill: ['#ffd6dc', '#ff5a6e'], stroke: '#2a0610', dur: 2, rise: 30, font: 'brush' });
+        // 首领已被击败的收尾阶段不再询问
+        if (!this.boss?.dying && this.ui.offerRevive?.(this.revives)) {
+          this.state = 'revive';
+          this.endFever();
+          sfx.heart();
+        } else this.loseGame();
       } else if (T.every((tr) => tr.toSpawn === 0 && tr.balls.length === 0) && (!this.boss || this.boss.dead)) {
         this.run.maxLead = Math.max(...T.map((tr) => tr.maxLead));
         this.state = 'win';

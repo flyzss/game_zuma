@@ -141,35 +141,191 @@ function iconTex(type) {
   return PIXI.Texture.from(c);
 }
 
-function ballTex(col) {
+// 珠子外观：每种都保留颜色符号（色弱辅助），只换质感
+export const BALL_SKINS = [
+  { id: 'classic', name: '彩釉珠', desc: '灯会上最常见的彩釉，干净利落', price: 0 },
+  { id: 'glass', name: '琉璃珠', desc: '通透的琉璃，里面流着光', price: 1200 },
+  { id: 'jade', name: '温玉珠', desc: '温润如玉，带着云絮般的玉纹', price: 2000 },
+  { id: 'star', name: '星辰珠', desc: '每一颗里都藏着一小片星空', price: 3000 },
+  { id: 'gilt', name: '鎏金珠', desc: '描金宝相花纹，富丽堂皇', price: 4500 },
+];
+export const BALL_CANVAS = {};
+
+// 弹道拖尾
+export const TRAILS = [
+  { id: 'plain', name: '流光', desc: '珠子本色的一道淡光', price: 0, colors: null },
+  { id: 'firefly', name: '萤火', desc: '一路洒下点点萤火，久久不散', price: 800, colors: ['#d9ff8f', '#fff3a0'] },
+  { id: 'petal', name: '落英', desc: '花瓣纷飞，打完一枪满地落红', price: 1500, colors: ['#ffb3d1', '#ff7aa8'] },
+  { id: 'gold', name: '金粉', desc: '金屑闪闪，打一枪像撒一把钱', price: 2500, colors: ['#ffe08a', '#ffffff'] },
+  { id: 'dragon', name: '火龙', desc: '烈焰缠身，每一发都像燎原', price: 4000, colors: ['#ff8a2e', '#ff3d1e'] },
+];
+export const TRAIL_CANVAS = {};
+
+function seeded(n) {
+  let s = n * 9301 + 49297;
+  return () => ((s = (s * 16807) % 2147483647) / 2147483647);
+}
+
+function ballTex(col, style = 'classic', idx = 0) {
   if (col.sym === 'rainbow') return rainbowBallTex();
   const S = 128, C = 64, r = 60;
   const [c, g] = canvas(S, S);
-  let gr = g.createRadialGradient(C, C, 2, C, C, r);
-  // 大面积纯色、只在边缘压暗：远看就是一个干净的色块，更好分辨
-  gr.addColorStop(0, col.hex);
-  gr.addColorStop(0.72, col.hex);
-  gr.addColorStop(1, col.dark);
-  g.fillStyle = gr;
-  g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.fill();
-
-  // 赤道纹 + 符号（随滚动旋转）
-  g.save();
-  g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.clip();
-  g.strokeStyle = 'rgba(255,255,255,0.10)';
-  g.lineWidth = 4;
-  g.beginPath(); g.ellipse(C, C, r * 1.02, r * 0.5, 0, 0, Math.PI * 2); g.stroke();
-  g.restore();
+  const clip = () => { g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.clip(); };
+  let gr;
+  if (style === 'glass') {
+    // 琉璃：中心透亮、边缘浓郁，底部一道焦散光
+    gr = g.createRadialGradient(C - 10, C - 12, 4, C, C, r);
+    gr.addColorStop(0, col.light);
+    gr.addColorStop(0.35, col.hex);
+    gr.addColorStop(0.85, col.hex);
+    gr.addColorStop(1, col.dark);
+    g.fillStyle = gr;
+    g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.fill();
+    g.save(); clip();
+    g.globalCompositeOperation = 'lighter';
+    gr = g.createRadialGradient(C + 12, C + 30, 2, C + 12, C + 30, 34);
+    gr.addColorStop(0, 'rgba(255,255,255,0.55)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, S, S);
+    g.globalCompositeOperation = 'source-over';
+    g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 3;
+    g.beginPath(); g.arc(C, C, r - 6, 0.2 * Math.PI, 0.75 * Math.PI); g.stroke();
+    g.restore();
+  } else if (style === 'jade') {
+    // 温玉：偏乳白的柔和底色 + 云絮玉纹
+    gr = g.createRadialGradient(C - 8, C - 10, 4, C, C, r);
+    gr.addColorStop(0, col.light);
+    gr.addColorStop(0.55, col.hex);
+    gr.addColorStop(1, col.dark);
+    g.fillStyle = gr;
+    g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.fill();
+    g.save(); clip();
+    g.fillStyle = 'rgba(255,255,255,0.16)'; g.fillRect(0, 0, S, S);
+    const rnd = seeded(idx + 3);
+    for (let k = 0; k < 5; k++) {
+      g.strokeStyle = `rgba(255,255,255,${0.12 + rnd() * 0.2})`;
+      g.lineWidth = 2 + rnd() * 5;
+      g.beginPath();
+      const y0 = 14 + rnd() * 100;
+      g.moveTo(0, y0);
+      g.bezierCurveTo(40, y0 + (rnd() - 0.5) * 60, 90, y0 + (rnd() - 0.5) * 60, S, y0 + (rnd() - 0.5) * 30);
+      g.stroke();
+    }
+    g.restore();
+  } else if (style === 'star') {
+    // 星辰：深色核心 + 本色星云边 + 星点
+    gr = g.createRadialGradient(C, C, 2, C, C, r);
+    gr.addColorStop(0, '#0b0820');
+    gr.addColorStop(0.5, col.dark);
+    gr.addColorStop(0.88, col.hex);
+    gr.addColorStop(1, col.light);
+    g.fillStyle = gr;
+    g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.fill();
+    g.save(); clip();
+    const rnd = seeded(idx + 11);
+    g.globalCompositeOperation = 'lighter';
+    gr = g.createRadialGradient(C + 14, C - 6, 0, C + 14, C - 6, 40);
+    gr.addColorStop(0, col.hex + '88');
+    gr.addColorStop(1, col.hex + '00');
+    g.fillStyle = gr; g.fillRect(0, 0, S, S);
+    for (let k = 0; k < 16; k++) {
+      const x = 14 + rnd() * 100, y = 14 + rnd() * 100, s = 0.8 + rnd() * 1.8;
+      g.fillStyle = `rgba(255,255,255,${0.5 + rnd() * 0.5})`;
+      g.beginPath(); g.arc(x, y, s, 0, Math.PI * 2); g.fill();
+    }
+    g.restore();
+  } else {
+    gr = g.createRadialGradient(C, C, 2, C, C, r);
+    // 大面积纯色、只在边缘压暗：远看就是一个干净的色块，更好分辨
+    gr.addColorStop(0, col.hex);
+    gr.addColorStop(0.72, col.hex);
+    gr.addColorStop(1, col.dark);
+    g.fillStyle = gr;
+    g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.fill();
+    // 赤道纹（随滚动旋转）
+    g.save(); clip();
+    g.strokeStyle = 'rgba(255,255,255,0.10)';
+    g.lineWidth = 4;
+    g.beginPath(); g.ellipse(C, C, r * 1.02, r * 0.5, 0, 0, Math.PI * 2); g.stroke();
+    g.restore();
+  }
+  if (style === 'gilt') {
+    // 鎏金：描金宝相花 + 金色赤道带
+    g.save(); clip();
+    g.strokeStyle = '#ffe08a'; g.lineWidth = 5;
+    g.beginPath(); g.ellipse(C, C, r * 1.02, r * 0.5, 0, 0, Math.PI * 2); g.stroke();
+    g.translate(C, C);
+    g.strokeStyle = 'rgba(255,230,150,0.85)'; g.lineWidth = 2.5;
+    for (let k = 0; k < 4; k++) {
+      g.rotate(Math.PI / 2);
+      g.beginPath(); g.moveTo(0, -30); g.quadraticCurveTo(16, -44, 0, -56); g.quadraticCurveTo(-16, -44, 0, -30); g.stroke();
+    }
+    g.beginPath(); g.arc(0, 0, 30, 0, Math.PI * 2); g.stroke();
+    g.restore();
+  }
 
   g.save();
   g.translate(C, C);
   // 符号用同色系深色压印，作为色弱辅助，不再和底色抢眼
-  g.globalAlpha = 0.5;
-  g.fillStyle = col.dark; g.strokeStyle = col.dark;
+  g.globalAlpha = style === 'star' ? 0.75 : 0.5;
+  const ink = style === 'star' ? col.light : style === 'gilt' ? '#5a3a08' : col.dark;
+  g.fillStyle = ink; g.strokeStyle = ink;
   g.lineJoin = 'round';
   symbol(g, col.sym, 19);
   g.restore();
+  (BALL_CANVAS[style] ||= [])[idx] = c;
   return PIXI.Texture.from(c);
+}
+
+// 花瓣粒子
+function petalTex() {
+  const [c, g] = canvas(48, 48);
+  g.translate(24, 24);
+  const gr = g.createLinearGradient(0, -20, 0, 20);
+  gr.addColorStop(0, '#ffffff'); gr.addColorStop(1, '#ffd0e2');
+  g.fillStyle = gr;
+  g.beginPath(); g.moveTo(0, -20); g.quadraticCurveTo(16, -4, 0, 20); g.quadraticCurveTo(-16, -4, 0, -20); g.fill();
+  return PIXI.Texture.from(c);
+}
+
+// 灯坊里拖尾的静态预览：一道弧线上的粒子
+function trailPreview(t) {
+  const W = 200, H = 120;
+  const [c, g] = canvas(W, H);
+  const rnd = seeded(t.id.length * 7);
+  const pt = (k) => [20 + k * 150, 96 - Math.sin(k * Math.PI * 0.85) * 64];
+  g.globalCompositeOperation = 'lighter';
+  const cols = t.colors || ['#ffc531', '#ffe08a'];
+  for (let i = 0; i < 46; i++) {
+    const k = i / 45;
+    const [x, y] = pt(k);
+    const a = 0.15 + k * 0.85;
+    const col = cols[i % cols.length];
+    const jx = (rnd() - 0.5) * 14 * (t.id === 'plain' ? 0.2 : 1), jy = (rnd() - 0.5) * 14 * (t.id === 'plain' ? 0.2 : 1);
+    const size = t.id === 'dragon' ? 5 + k * 9 : t.id === 'plain' ? 3 + k * 6 : 2 + rnd() * 4;
+    const gr = g.createRadialGradient(x + jx, y + jy, 0, x + jx, y + jy, size * 2.2);
+    gr.addColorStop(0, col);
+    gr.addColorStop(1, col + '00');
+    g.globalAlpha = a;
+    if (t.id === 'petal' && i % 2) {
+      g.save(); g.translate(x + jx, y + jy); g.rotate(rnd() * 6);
+      g.fillStyle = col;
+      g.beginPath(); g.moveTo(0, -6); g.quadraticCurveTo(5, 0, 0, 6); g.quadraticCurveTo(-5, 0, 0, -6); g.fill();
+      g.restore();
+    } else {
+      g.fillStyle = gr;
+      g.beginPath(); g.arc(x + jx, y + jy, size * 2.2, 0, Math.PI * 2); g.fill();
+    }
+  }
+  // 末端一颗珠子
+  g.globalAlpha = 1;
+  g.globalCompositeOperation = 'source-over';
+  const [x, y] = pt(1);
+  const gr = g.createRadialGradient(x - 3, y - 3, 1, x, y, 11);
+  gr.addColorStop(0, '#fff4c8'); gr.addColorStop(0.5, '#ffc531'); gr.addColorStop(1, '#7d4a00');
+  g.fillStyle = gr;
+  g.beginPath(); g.arc(x, y, 11, 0, Math.PI * 2); g.fill();
+  TRAIL_CANVAS[t.id] = c;
 }
 
 // 固定不转的光影层：高光 + 暗部，让珠子有体积感
@@ -253,13 +409,13 @@ function ringTex() {
 export const SKINS = [
   { id: 'orange', name: '橘灯', desc: '灯会上最常见的一盏，暖暖的', price: 0, halo: 0xffa53d,
     body: ['#fff7da', '#ffc062', '#e2552a'], cap: '#b4232f', trim: '#ffcf5a', rib: 'rgba(150,50,20,0.28)' },
-  { id: 'rabbit', name: '玉兔灯', desc: '竖着一对长耳朵，蹦蹦跳跳', price: 300, halo: 0xffc4d8,
+  { id: 'rabbit', name: '玉兔灯', desc: '竖着一对长耳朵，蹦蹦跳跳', price: 800, halo: 0xffc4d8,
     body: ['#ffffff', '#ffe6ee', '#f2a5bd'], cap: '#e0607e', trim: '#fff2c4', rib: 'rgba(200,90,120,0.2)', deco: 'ears' },
-  { id: 'lotus', name: '青莲灯', desc: '莲瓣层层托起，出水不染', price: 500, halo: 0x6ff0d0,
+  { id: 'lotus', name: '青莲灯', desc: '莲瓣层层托起，出水不染', price: 1500, halo: 0x6ff0d0,
     body: ['#f4fff9', '#8ff0cf', '#1d9c86'], cap: '#0f5e55', trim: '#ffe7a8', rib: 'rgba(10,90,80,0.25)', deco: 'petals' },
-  { id: 'koi', name: '锦鲤灯', desc: '摆着鳍尾，鱼跃龙门', price: 700, halo: 0xff7a4a,
+  { id: 'koi', name: '锦鲤灯', desc: '摆着鳍尾，鱼跃龙门', price: 2500, halo: 0xff7a4a,
     body: ['#fffbe8', '#ffad5c', '#e8341f'], cap: '#8a1410', trim: '#ffd86a', rib: 'rgba(130,20,10,0.25)', deco: 'fins' },
-  { id: 'palace', name: '紫宸宫灯', desc: '六角宫灯，金框紫纱，贵气逼人', price: 1000, halo: 0xc77dff,
+  { id: 'palace', name: '紫宸宫灯', desc: '六角宫灯，金框紫纱，贵气逼人', price: 4000, halo: 0xc77dff,
     body: ['#fbeaff', '#c58bff', '#5a1fa8'], cap: '#2e0c52', trim: '#ffd86a', rib: 'rgba(60,10,110,0.3)', deco: 'palace' },
   { id: 'dragon', name: '金龙灯', desc: '击退年兽的勇者才能点亮', ach: 'boss_win', halo: 0xffd84a,
     body: ['#fffbe0', '#ffd84a', '#c87410'], cap: '#a8161c', trim: '#fff0a8', rib: 'rgba(140,70,0,0.3)', deco: 'horns' },
@@ -581,7 +737,11 @@ function bgTex() {
 }
 
 export function buildTextures() {
-  TEX.balls = COLORS.map(ballTex);
+  TEX.ballSets = {};
+  for (const sk of BALL_SKINS) TEX.ballSets[sk.id] = COLORS.map((col, i) => ballTex(col, sk.id, i));
+  TEX.balls = TEX.ballSets.classic;
+  TEX.petal = petalTex();
+  for (const t of TRAILS) trailPreview(t);
   TEX.icons = {};
   for (const k of Object.keys(POWERS)) TEX.icons[k] = iconTex(k);
   TEX.shine = shineTex();

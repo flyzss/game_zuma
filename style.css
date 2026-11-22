@@ -936,3 +936,39 @@ body.boss #combo { top: calc(max(10px, env(safe-area-inset-top)) + 128px); }
   .d-seal { width: 40px; height: 40px; font-size: 17px; }
   .d-txt b { font-size: 22px; letter-spacing: 3px; }
 }
+
+/* ============ 灯坊货架 ============ */
+.shop-tabs { display: flex; gap: 8px; margin: 0 4px 12px; }
+.shop-tab {
+  flex: 1; max-width: 160px; height: 44px; border-radius: 22px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-family: var(--f-brush); font-size: 22px; letter-spacing: 4px; color: var(--muted);
+  background: rgba(20, 18, 46, .6); border: 1.5px solid rgba(255, 255, 255, .08);
+  transition: color .15s, border-color .15s, background .15s;
+}
+.shop-tab small { font-family: var(--f-num); font-size: 12px; letter-spacing: 0; opacity: .8; }
+.shop-tab:hover { color: var(--text); }
+.shop-tab.on { color: #2a1405; background: linear-gradient(180deg, #ffe08a, #e0a23a); border-color: #fff1c2; box-shadow: 0 0 16px rgba(255, 200, 90, .35); }
+.ball-row { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; width: 112px; }
+.ball-row img { width: 52px; height: 52px; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .45)); }
+.skin.kind-ball .sk-pic img, .skin.kind-trail .sk-pic img { animation: none; }
+.skin.kind-ball:hover .ball-row img { animation: spinBall 1.2s linear infinite; }
+@keyframes spinBall { to { transform: rotate(360deg); } }
+.trail-pic { width: 150px !important; }
+.skin:not(.own) .ball-row img, .skin:not(.own) .trail-pic { filter: saturate(.6) brightness(.8); }
+
+/* ============ 灯油续燃 ============ */
+.revive-timer { margin: 16px auto 0; width: 80%; height: 6px; border-radius: 3px; background: rgba(90, 60, 30, .18); overflow: hidden; }
+.revive-timer i { display: block; height: 100%; background: linear-gradient(90deg, #c8362b, #ffb347); animation: drain linear forwards; transform-origin: left; }
+@keyframes drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+.revive-note { margin-top: 12px; font-size: 13px; color: var(--ink-soft); letter-spacing: 1px; }
+.revive-note.ink { margin-top: 8px; color: #a23a1a; }
+.btn-red[disabled] { filter: grayscale(.85) brightness(.75); cursor: not-allowed; }
+.btn-red .coin { margin-left: .3em; }
+
+@media (max-width: 600px) {
+  .shop-tab { font-size: 19px; letter-spacing: 2px; height: 40px; }
+  .ball-row { width: 92px; }
+  .ball-row img { width: 42px; height: 42px; }
+  .trail-pic { width: 120px !important; }
+}

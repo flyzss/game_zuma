@@ -1,6 +1,6 @@
 // 局外系统：存档、成就「灯谱」、每关挑战、灯币与灯灵外观
 import { LEVELS } from './levels.js';
-import { SKINS } from './textures.js';
+import { SKINS, BALL_SKINS, TRAILS } from './textures.js';
 import { DAILY, dayKey, prevDayKey } from './daily.js';
 
 export const store = {
@@ -23,6 +23,7 @@ function defaults() {
   for (const k of LIFE_KEYS) life[k] = 0;
   life.powers = {};
   return { coins: 0, life, ach: {}, chal: {}, skins: ['orange'], skin: 'orange', seen: 0, lit: 0,
+    balls: ['classic'], ball: 'classic', trails: ['plain'], trail: 'plain',
     daily: { day: '', best: 0, done: false, streak: 0, lastDone: '', total: 0 } };
 }
 const P = Object.assign(defaults(), store.get('profile', {}));
@@ -33,6 +34,18 @@ const save = () => store.set('profile', P);
 const totalStars = () => LEVELS.reduce((a, _, i) => a + store.get('stars' + i, 0), 0);
 const threeStarAll = () => LEVELS.every((_, i) => store.get('stars' + i, 0) >= 3);
 const buyable = SKINS.filter((s) => !s.ach && s.price > 0);
+
+// 灯坊货架：类别 → 商品列表 / 已拥有字段 / 正在使用字段
+export const SHELVES = {
+  lantern: { name: '灯灵', list: SKINS, own: 'skins', use: 'skin' },
+  ball: { name: '珠子', list: BALL_SKINS, own: 'balls', use: 'ball' },
+  trail: { name: '拖尾', list: TRAILS, own: 'trails', use: 'trail' },
+};
+const allBuyable = () => Object.values(SHELVES).flatMap((sh) => sh.list.filter((x) => !x.ach && x.price > 0).map((x) => [sh, x]));
+const boughtAny = () => Object.values(SHELVES).some((sh) => P[sh.own].length > 1);
+
+// 灯油续燃：每局最多 3 次，价格翻倍
+export const REVIVE_COST = [60, 120, 240];
 
 // ================= 成就 =================
 // test(c)：c.run 本局统计，c.sum(k) 生涯累计（含本局），c.end 结算信息（局中为 null）
@@ -101,8 +114,10 @@ export const ACHIEVEMENTS = [
   A('daily_3star', '每日一灯', '一夜三星', '在每日一灯里拿到三星', 60, (c) => c.end?.won && c.level === DAILY && c.end.stars >= 3),
 
   // —— 灯坊珍藏 ——
-  A('skin_1', '灯坊珍藏', '新灯初换', '在灯坊买下第一盏灯', 20, () => P.skins.length > 1),
+  A('skin_1', '灯坊珍藏', '新灯初换', '在灯坊买下第一件商品', 20, boughtAny),
   A('skin_all', '灯坊珍藏', '灯坊常客', '买齐灯坊里所有的灯', 300, () => buyable.every((s) => P.skins.includes(s.id))),
+  A('collector', '灯坊珍藏', '琳琅满目', '买齐灯坊里所有的商品', 800, () => allBuyable().every(([sh, x]) => P[sh.own].includes(x.id))),
+  A('revive_win', '灯坊珍藏', '死灰复燃', '用灯油续燃之后仍然过关', 60, (c) => c.end?.won && (c.run.revives || 0) > 0),
   A('coins_5k', '灯坊珍藏', '腰缠万贯', '累计获得 5,000 灯币', 100, () => P.life.coinsEarned >= 5000),
   A('chal_30', '灯坊珍藏', '有求必应', '累计完成 30 项关卡挑战', 150, () => chalDone() >= 30),
   A('chal_all', '灯坊珍藏', '十全十美', '完成所有关卡挑战', 500, () => chalDone() >= LEVELS.length * 3),
@@ -194,17 +209,18 @@ export const meta = {
     if (level >= 0 && end.won) {
       const prev = chalState(level);
       const now = CHALLENGES[level].map((ch, k) => {
-        const done = !!ch.test(run, end);
+        const done = !run.revives && !!ch.test(run, end);
         return { text: ch.text, done: done || prev[k], isNew: done && !prev[k] };
       });
       P.chal[level] = now.map((x) => x.done);
       res.chal = now;
+      res.revived = run.revives || 0;
       const nNew = now.filter((x) => x.isNew).length;
       if (nNew) res.parts.push(['挑战', nNew * 40]);
     } else if (level >= 0) {
       res.chal = CHALLENGES[level].map((ch, k) => ({ text: ch.text, done: chalState(level)[k], isNew: false }));
     }
-    if (level === DAILY) this.finishDaily(end, res);
+    if (level === DAILY) this.finishDaily(end, res, run);
     // 灯币：分数 + 星数（过关）或少量安慰（失败）；无尽模式按重数
     if (level === -1) res.parts.unshift(['长夜', Math.round(end.score / 250) + (run.stage - 1) * 10]);
     else if (end.won) res.parts.unshift(['过关', Math.round(end.score / 200) + end.stars * 15]);
@@ -240,9 +256,9 @@ export const meta = {
     return d;
   },
 
-  finishDaily(end, res) {
+  finishDaily(end, res, run = {}) {
     const d = this.daily();
-    d.best = Math.max(d.best, end.score);
+    if (!run.revives) d.best = Math.max(d.best, end.score);
     res.dailyBest = d.best;
     if (end.won && !d.done) {
       d.done = true;
@@ -255,18 +271,27 @@ export const meta = {
     res.streak = d.streak;
   },
 
-  buy(id) {
-    const s = SKINS.find((x) => x.id === id);
-    if (!s || s.ach || P.skins.includes(id) || P.coins < s.price) return null;
+  buy(kind, id) {
+    const sh = SHELVES[kind];
+    const s = sh?.list.find((x) => x.id === id);
+    if (!s || s.ach || P[sh.own].includes(id) || P.coins < s.price) return null;
     P.coins -= s.price;
-    P.skins.push(id);
-    P.skin = id;
+    P[sh.own].push(id);
+    P[sh.use] = id;
     save();
     return this.check(this.ctx(0, { powers: {} }));
   },
-  equip(id) {
-    if (!P.skins.includes(id)) return false;
-    P.skin = id;
+  equip(kind, id) {
+    const sh = SHELVES[kind];
+    if (!sh || !P[sh.own].includes(id)) return false;
+    P[sh.use] = id;
+    save();
+    return true;
+  },
+  // 续燃：扣灯币，成功返回 true
+  spend(n) {
+    if (P.coins < n) return false;
+    P.coins -= n;
     save();
     return true;
   },

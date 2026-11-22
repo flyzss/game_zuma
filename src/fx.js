@@ -50,6 +50,7 @@ export class FX {
       s.blendMode = PIXI.BLEND_MODES.ADD;
     }
     s.texture = tex;
+    s.blendMode = PIXI.BLEND_MODES.ADD;   // 池里的精灵可能被花瓣改成过普通混合
     s.rotation = 0;
     s.alpha = 1;
     s.tint = 0xffffff;

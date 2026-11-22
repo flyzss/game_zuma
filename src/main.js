@@ -4,8 +4,8 @@ import { LEVELS, ENDLESS } from './levels.js';
 import { sfx } from './audio.js';
 import { loadCfg } from './config.js';
 import { initDevPanel } from './devpanel.js';
-import { COLORS, RAINBOW, SKINS, SKIN_CANVAS } from './textures.js';
-import { store, meta, ACHIEVEMENTS, CHALLENGES, chalState } from './meta.js';
+import { COLORS, RAINBOW, SKINS, SKIN_CANVAS, BALL_CANVAS, TRAIL_CANVAS } from './textures.js';
+import { store, meta, ACHIEVEMENTS, CHALLENGES, chalState, SHELVES, REVIVE_COST } from './meta.js';
 import { TAL, COMBO_TIERS } from './perks.js';
 import { DAILY, dailyLevel, prevDayKey } from './daily.js';
 import { drawShareCard, SHARE_URL } from './share.js';
@@ -264,6 +264,7 @@ const ui = {
       <div class="s-score" id="resScore">0</div>
       <div class="s-stats">${stats.time != null ? `用时 <b>${stats.time} 秒</b> · ` : ''}最高连锁 <b>×${stats.bestChain || 1}</b> · 最高分 <b>${best.toLocaleString()}</b>${isNew ? ' · <b>新纪录</b>' : ''}</div>
       ${chalList(res.chal, '本关挑战', 1500)}
+      ${res.revived ? `<div class="revive-note ink">本局续燃 ${res.revived} 次，挑战不计入</div>` : ''}
       ${coinLine(res)}
       <div class="actions">
         ${last ? '' : '<button class="btn-red" data-act="next">下一关</button>'}
@@ -475,23 +476,36 @@ const ui = {
     this.page = 'codex';
   },
 
-  // —— 灯坊：用灯币换灯灵外观 ——
-  showShop() {
+  // —— 灯坊：灯灵 / 珠子 / 拖尾 三个货架 ——
+  shopTab: 'lantern',
+  showShop(tab = this.shopTab) {
+    this.shopTab = tab;
     const P = meta.P;
-    const cards = SKINS.map((s) => {
-      const own = P.skins.includes(s.id);
-      const on = P.skin === s.id;
+    const sh = SHELVES[tab];
+    const pic = (s) => {
+      if (tab === 'lantern') return `<img src="${imgUrl('l-' + s.id, SKIN_CANVAS[s.id])}" alt="${s.name}">`;
+      if (tab === 'ball') return `<span class="ball-row">${[0, 1, 2, 3].map((k) => `<img src="${imgUrl(`b-${s.id}-${k}`, BALL_CANVAS[s.id][k])}" alt="">`).join('')}</span>`;
+      return `<img class="trail-pic" src="${imgUrl('t-' + s.id, TRAIL_CANVAS[s.id])}" alt="${s.name}">`;
+    };
+    const cards = sh.list.map((s) => {
+      const own = P[sh.own].includes(s.id);
+      const on = P[sh.use] === s.id;
       let btn;
       if (on) btn = '<button class="sk-btn on" disabled>使用中</button>';
-      else if (own) btn = `<button class="sk-btn" data-act="equip" data-skin="${s.id}">换上</button>`;
+      else if (own) btn = `<button class="sk-btn" data-act="equip" data-kind="${tab}" data-skin="${s.id}">换上</button>`;
       else if (s.ach) btn = `<button class="sk-btn lock" disabled>成就「${meta.ach(s.ach).name}」解锁</button>`;
-      else btn = `<button class="sk-btn buy" data-act="buy" data-skin="${s.id}" ${P.coins < s.price ? 'disabled' : ''}>${COIN}${s.price}</button>`;
-      return `<div class="skin ${on ? 'on' : ''} ${own ? 'own' : ''}" style="--halo:#${s.halo.toString(16).padStart(6, '0')}">
-        <div class="sk-pic"><img src="${SKIN_CANVAS[s.id].toDataURL()}" alt="${s.name}"></div>
+      else btn = `<button class="sk-btn buy" data-act="buy" data-kind="${tab}" data-skin="${s.id}" ${P.coins < s.price ? 'disabled' : ''}>${COIN}${s.price.toLocaleString()}</button>`;
+      const halo = s.halo != null ? `#${s.halo.toString(16).padStart(6, '0')}` : '#ffd27a';
+      return `<div class="skin kind-${tab} ${on ? 'on' : ''} ${own ? 'own' : ''}" style="--halo:${halo}">
+        <div class="sk-pic">${pic(s)}</div>
         <div class="sk-name">${s.name}</div>
         <div class="sk-desc">${s.desc}</div>
         ${btn}
       </div>`;
+    }).join('');
+    const tabs = Object.entries(SHELVES).map(([k, v]) => {
+      const n = v.list.filter((x) => P[v.own].includes(x.id)).length;
+      return `<button class="shop-tab ${k === tab ? 'on' : ''}" data-act="shoptab" data-tab="${k}">${v.name}<small>${n}/${v.list.length}</small></button>`;
     }).join('');
     this.show(`
       <div class="book">
@@ -500,11 +514,36 @@ const ui = {
           <h2>灯坊</h2>
           <span class="wallet">${COIN}<b>${P.coins.toLocaleString()}</b></span>
         </header>
-        <p class="book-sub">过关、完成挑战、达成成就都能得到灯币</p>
+        <div class="shop-tabs">${tabs}</div>
+        <p class="book-sub">过关、完成挑战、达成成就都能得到灯币；珠串进井时还能花灯币「续燃」</p>
         <div class="skin-grid">${cards}</div>
       </div>`, false);
     this.menuOpen = false;
     this.page = 'shop';
+  },
+
+  // —— 灯油续燃：珠串进井时询问，倒计时内不选就算放弃 ——
+  offerRevive(n) {
+    if (n >= REVIVE_COST.length) return false;
+    const cost = REVIVE_COST[n];
+    const can = meta.coins >= cost;
+    this.show(this.scroll(`
+      <div class="s-level">珠串已到井口</div>
+      <h2 class="s-title">灯火将熄</h2>
+      <div class="s-sub">添一勺灯油：烧掉井口附近的珠子，珠串倒流</div>
+      <div class="revive-timer"><i id="reviveBar"></i></div>
+      <div class="actions">
+        <button class="btn-red" data-act="revive" ${can ? '' : 'disabled'}>续燃 · ${COIN}${cost}</button>
+        <button class="btn-ink" data-act="giveup">任其熄灭</button>
+      </div>
+      <div class="revive-note">${can ? `余 ${COIN}${meta.coins.toLocaleString()} · 本局第 ${n + 1} / ${REVIVE_COST.length} 次 · 续燃过的一局不计挑战` : `灯币不足（余 ${meta.coins.toLocaleString()}）`}</div>
+    `));
+    clearTimeout(this._reviveT);
+    const bar = $('reviveBar');
+    bar.style.animationDuration = '8s';
+    this._reviveT = setTimeout(() => { if (game.state === 'revive') game.giveUp(); }, 8000);
+    this._reviveCost = cost;
+    return true;
   },
 
   // 局中事件 → 成就检查
@@ -630,7 +669,10 @@ function perkList(perks) {
 }
 const fmtHours = (sec) => (sec < 3600 ? `${Math.floor(sec / 60)} 分` : `${(sec / 3600).toFixed(1)} 时`);
 const newAch = () => Math.max(0, meta.achCount() - (meta.P.seen || 0));
-const affordable = () => SKINS.some((s) => !s.ach && !meta.P.skins.includes(s.id) && meta.coins >= s.price);
+const affordable = () => Object.values(SHELVES).some((sh) => sh.list.some((s) => !s.ach && !meta.P[sh.own].includes(s.id) && meta.coins >= s.price));
+// 预览图只生成一次
+const imgCache = {};
+const imgUrl = (k, c) => (imgCache[k] ||= c.toDataURL());
 
 // 印章：两到四个字，竖排从右往左
 function sealHtml(text, on) {
@@ -717,7 +759,7 @@ function countUp(el, to, dur, delay) {
 }
 
 const game = new Game(app, ui);
-game.setSkin(meta.skin().id, meta.skin().halo);
+applySkin();
 meta.perksNow = () => game.perks;
 let current = 0;
 
@@ -752,18 +794,28 @@ $('screen').addEventListener('click', (e) => {
   else if (act === 'shop') ui.showShop();
   else if (act === 'home') ui.showMenu();
   else if (act === 'buy') {
-    const got = meta.buy(b.dataset.skin);
+    const got = meta.buy(b.dataset.kind, b.dataset.skin);
     if (got) { applySkin(); sfx.rainbow(); ui.showShop(); got.forEach(toast); }
   } else if (act === 'perk') {
     game.pickPerk(b.dataset.perk);
   } else if (act === 'equip') {
-    if (meta.equip(b.dataset.skin)) { applySkin(); sfx.powerAppear(); ui.showShop(); }
+    if (meta.equip(b.dataset.kind, b.dataset.skin)) { applySkin(); sfx.powerAppear(); ui.showShop(); }
+  } else if (act === 'shoptab') {
+    ui.showShop(b.dataset.tab);
+  } else if (act === 'revive') {
+    clearTimeout(ui._reviveT);
+    if (game.state === 'revive' && meta.spend(ui._reviveCost)) game.revive();
+  } else if (act === 'giveup') {
+    clearTimeout(ui._reviveT);
+    game.giveUp();
   }
 });
 
 function applySkin() {
   const s = meta.skin();
   game.setSkin(s.id, s.halo);
+  game.setBallSkin(meta.P.ball);
+  game.setTrail(meta.P.trail);
 }
 
 $('btnPause').addEventListener('click', () => game.pause());
