@@ -6,10 +6,10 @@ import { sfx, music } from './audio.js';
 import { CFG } from './config.js';
 
 // 固定参数（改了会影响关卡布局，不放进调参面板）
-// 触屏设备：珠子放大约 17%，同时按比例减少珠子数量，让珠串总长与关卡节奏保持不变
+// 触屏设备：珠子放大约 40%，同时按比例减少珠子数量，让珠串总长与关卡节奏保持不变
 const IS_TOUCH = matchMedia('(pointer: coarse)').matches;
 const BASE_D = 46;
-const D = IS_TOUCH ? 54 : BASE_D; // 珠子直径（世界坐标）
+const D = IS_TOUCH ? 64 : BASE_D; // 珠子直径（世界坐标）
 const R = D / 2;
 const COUNT_K = BASE_D / D;
 const SWAP_PX = 46;          // 触屏轻点主角交换的最小判定半径（屏幕像素）
@@ -576,7 +576,14 @@ export class Game {
     const p = {
       color: this.cur, x: this.sx + dx * MUZZLE, y: this.sy + dy * MUZZLE,
       vx: dx * CFG.shotSpeed, vy: dy * CFG.shotSpeed, view: v.view, body: v.body,
+      fire: this.feverT > 0,   // 灯火燎原：火珠，打到哪炸到哪
     };
+    if (p.fire) {
+      v.view.scale.set(1.25); v.body.tint = 0xffc070;
+      this.feverShots--;
+      this.fx.text(this.sx, this.sy - 110, this.feverShots > 0 ? `火珠 ×${this.feverShots}` : '火珠用尽', { size: 34, fill: ['#fffbe6', '#ff9d3c'], stroke: '#3a0a02', dur: 0.7, rise: 40, font: 'brush' });
+      if (this.feverShots <= 0) this.feverT = Math.min(this.feverT, 0.5);
+    }
     v.view.position.set(p.x, p.y);
     this.projLayer.addChild(v.view);
     this.projectiles.push(p);
@@ -586,7 +593,7 @@ export class Game {
     this.cur = this.next;
     this.next = this.pickColor();
     this.updateAmmoView();
-    this.cooldown = CFG.fireCooldown * (this.feverT > 0 ? 0.6 : 1);
+    this.cooldown = CFG.fireCooldown * (this.feverT > 0 ? 0.8 : 1);
     this.shooter.recoil = 1;
     this.shooter.transferT = 1;
     sfx.shoot();
@@ -606,7 +613,7 @@ export class Game {
   update(dt) {
     this.t += dt;
     this.updateFireflies(dt);
-    if (this.state === 'paused' || !this.tracks) return;
+    if (this.state === 'paused' || !this.tracks) { sfx.roll(0); return; }
     let gdt = dt;
     if (this.hitStop > 0) { this.hitStop -= dt; gdt = dt * 0.1; }
     if (this.state === 'play') {
@@ -621,7 +628,7 @@ export class Game {
         this.feverT -= gdt;
         if (this.feverT <= 0) this.endFever();
       }
-      this.ui.setFever(this.feverT > 0 ? this.feverT / CFG.feverTime : this.fever, this.feverT > 0);
+      this.ui.setFever(this.feverT > 0 ? Math.max(0, this.feverShots) / CFG.feverShots : this.fever, this.feverT > 0);
     }
     if (this.state === 'play' || this.state === 'lose' || this.state === 'win') {
       this.updatePowers(gdt);
@@ -642,6 +649,20 @@ export class Game {
     this.updateDanger(dt);
     this.applyShake(dt);
     this.checkEnd(dt);
+    this.updateRollSound(gdt / (dt || 1));
+  }
+
+  // 滚动声：取所有轨道里最快的那段（推进或回吸），顿帧时跟着变慢
+  updateRollSound(k) {
+    let v = 0, retreat = false;
+    if (this.state === 'play' || this.state === 'lose') {
+      for (const tr of this.tracks) {
+        if (Math.abs(tr.rollV || 0) > Math.abs(v)) { v = tr.rollV; retreat = false; }
+        if ((tr.rollRetreat || 0) > Math.abs(v)) { v = tr.rollRetreat; retreat = true; }
+      }
+      if (this.boss?.dying) v = 0;
+    }
+    sfx.roll(v * k, retreat);
   }
 
   // 无尽模式：每 ENDLESS_STAGE 秒升一重
@@ -686,6 +707,31 @@ export class Game {
     }
   }
 
+  // 画面"一顶"：以屏幕中心为原点瞬间放大再弹回
+  punch(a) { this.punchAmt = Math.min(0.06, Math.max(this.punchAmt || 0, a)); }
+
+  // 某条轨道被打空：大字 + 奖励 + 沿着珠串原位置放一串烟花
+  onTrackCleared(tr, list) {
+    const bonus = 500 * (this.feverT > 0 ? 2 : 1);
+    this.addScore(bonus);
+    this.setHitStop(0.18);
+    this.punch(0.05);
+    this.shake(12);
+    buzz(60);
+    sfx.rainbow();
+    this.ui.flash('rgba(255,236,190,0.45)');
+    this.fx.text(500, 440, '一扫而空', { size: 104, fill: ['#fffbe6', '#ffd27a', '#ff9d3c'], stroke: '#3a1606', dur: 1.6, rise: 30, font: 'brush' });
+    this.fx.text(500, 540, '+' + bonus, { size: 52, font: 'num', dur: 1.5, rise: 40 });
+    const mine = list.filter((b) => b.tr === tr);
+    const step = Math.max(1, Math.floor(mine.length / 8));
+    for (let k = 0; k < mine.length; k += step) {
+      const b = mine[k];
+      this.fx.burst(b.x, b.y, COLORS[(k + b.color) % 6].tint, 18, 1.5);
+      this.fx.ring(b.x, b.y, 0xffffff, 1.6, 0.5);
+    }
+    this.fx.ring(this.sx, this.sy, 0xffd27a, 4.5, 0.8);
+  }
+
   setHitStop(t) { this.hitStop = Math.max(this.hitStop, t * CFG.hitStop); }
   shake(a) {
     this.shakeAmt = Math.max(this.shakeAmt, a);
@@ -711,8 +757,11 @@ export class Game {
     if (this.waveT > 0) v *= this.lv.surge.mul * Math.min(1, this.waveT / 0.3);   // 潮涌
     if (this.surgeT > 0) v *= 2.8;          // 年兽怒吼：珠串猛冲
     if (lead > 0.8) v *= CFG.dangerSlow;    // 临近终点稍微放慢，给翻盘机会
-    // 珠串被清得很短时快速补珠，避免干等
-    if (tr.toSpawn > 0 && lead < 0.12) v = Math.max(v, 170 * (1 - lead / 0.12) + v);
+    // 补珠：最后一段（被推动的那段）还在起点附近时快速冲入，清空后不用干等
+    const rl = (tr.rearS ?? -D) / tr.path.length;
+    if (tr.toSpawn > 0 && rl < 0.22) v += CFG.refillSpeed * (1 - Math.max(0, rl) / 0.22) ** 0.7;
+    // 追赶：后段与前方断开的珠串距离很远时加速靠拢
+    if (tr.rearGap > D * 3) v += Math.min(CFG.refillSpeed * 0.6, (tr.rearGap - D * 3) * 0.9);
     if (this.slowT > 0) v *= 0.35;
     if (this.feverT > 0) v *= 0.6;
     if (this.reverseT > 0) v = -CFG.reverseSpeed * Math.min(1, this.reverseT / 0.4);
@@ -770,7 +819,12 @@ export class Game {
     }
 
     // 4. 各段速度：最后一段被推动；前方段若与身后颜色相同则回吸
+    const rearEnd = (starts.length > 1 ? starts[1] : B.length) - 1;
+    tr.rearS = rearEnd >= 0 ? B[rearEnd].s : -D;
+    tr.rearGap = starts.length > 1 ? B[starts[1]].s - B[rearEnd].s : 0;
     const push = this.pushSpeed(tr);
+    tr.rollV = B.length ? push : 0;
+    tr.rollRetreat = 0;
     const segHeads = [];
     for (let k = 0; k < starts.length && B.length; k++) {
       const a0 = starts[k], a1 = (k + 1 < starts.length ? starts[k + 1] : B.length);
@@ -782,6 +836,7 @@ export class Game {
         if (this.state === 'play' && prev.color === head.color && prev.grow >= 1 && head.grow >= 1) {
           head.retreatV = Math.min(head.retreatV + CFG.retreatAcc * dt, CFG.retreatMax);
           v = -head.retreatV;
+          tr.rollRetreat = Math.max(tr.rollRetreat, head.retreatV);
         } else head.retreatV = 0;
         segHeads.push(head);
       }
@@ -861,7 +916,17 @@ export class Game {
     this.shooter.joy = 1;
 
     this.fx.ring(cx, cy, tint, 1.2 + n * 0.1);
-    this.fx.text(cx, cy, '+' + pts, { size: 30 + Math.min(level, 5) * 4, font: 'num' });
+    this.fx.ring(cx, cy, 0xffffff, 0.8 + n * 0.08, 0.3);
+    this.fx.text(cx, cy, '+' + pts, { size: 30 + Math.min(level, 5) * 4 + Math.min(n - 3, 6) * 2, font: 'num' });
+    this.punch(0.012 + Math.min(n - 3, 6) * 0.004 + (level - 1) * 0.008);
+    this.setHitStop(0.035 + Math.min(n - 3, 5) * 0.01);
+    // 一次消得多：给一句夸赞
+    const big = n >= 10 ? ['酣畅淋漓', '#ff6a3c'] : n >= 7 ? ['绝妙', '#ffb02e'] : n >= 5 ? ['妙', '#ffd27a'] : null;
+    if (big && level < 2) {
+      this.fx.text(cx, cy - 56, big[0], { size: 54 + n * 3, fill: ['#fffbe6', big[1]], dur: 1.2, rise: 80, font: 'brush' });
+      if (n >= 7) this.ui.flash('rgba(255,220,150,0.22)');
+      this.shake(5 + n * 0.6);
+    }
     if (level >= 2) {
       this.fx.text(cx, cy - 50, `连锁 ×${level}`, { size: 46 + level * 6, fill: ['#fff6c8', '#ff9d3c'], dur: 1.3, rise: 90, font: 'brush' });
       this.fx.ring(cx, cy, 0xffffff, 2.2 + level * 0.3, 0.7);
@@ -877,8 +942,6 @@ export class Game {
     sfx.match(level - 1 + Math.min(this.shotCombo, 4));
     this.destroyBalls(removed, level, cx, cy);
 
-    // 灯火燎原：每次命中消除再引爆一圈（可波及另一条轨道）
-    if (fever && fromShot) this.feverBlast(cx, cy, level);
     return true;
   }
 
@@ -887,6 +950,7 @@ export class Game {
     if (!list.length) return 0;
     const set = new Set(list);
     const powers = [];
+    const cleared = [];
     let n = 0;
     for (const tr of this.tracks) {
       const B = tr.balls;
@@ -895,7 +959,7 @@ export class Game {
       for (const b of B) {
         if (set.has(b)) {
           if (b.power) powers.push({ type: b.power, x: b.x, y: b.y, color: b.color });
-          this.toGhost(b, ox == null ? 0 : (Math.hypot(b.x - ox, b.y - oy) / D) * POP_STAGGER);
+          this.toGhost(b, ox == null ? 0 : (Math.hypot(b.x - ox, b.y - oy) / D) * POP_STAGGER, 1 + Math.min(level - 1, 4) * 0.18);
           gap = true;
         } else {
           // 断口前方的珠子记住连锁层级，回吸再次消除时层级 +1
@@ -904,9 +968,11 @@ export class Game {
           keep.push(b);
         }
       }
-      n += B.length - keep.length;
+      const had = B.length;
+      n += had - keep.length;
       B.length = 0;
       for (const b of keep) B.push(b);
+      if (had && !keep.length && tr.toSpawn > 0 && this.state === 'play') cleared.push(tr);
     }
     this.removedCount += n;
     if (this.state === 'play' && !this.boss?.dying) this.addFever(n * (1 + (level - 1) * 0.5));
@@ -916,16 +982,17 @@ export class Game {
       list.slice(0, 24).forEach((b, k) => this.spawnOrb(b.x, b.y, dmg * (k === 23 ? list.length - 23 : 1)));
     }
     for (const p of powers) this.triggerPower(p, level);
+    for (const tr of cleared) this.onTrackCleared(tr, list);
     this.refreshAmmo();
     return n;
   }
 
   // 被消除的珠子先鼓起、发白，再缩小消失并迸出粒子
-  toGhost(b, delay) {
+  toGhost(b, delay, pow = 1) {
     b.glow.destroy();
     if (b.badge) b.badge.visible = false;
     this.ghostLayer.addChild(b.view);
-    this.ghosts.push({ view: b.view, x: b.x, y: b.y, tint: COLORS[b.color].tint, delay, t: 0, burst: false });
+    this.ghosts.push({ view: b.view, x: b.x, y: b.y, tint: COLORS[b.color].tint, delay, t: 0, burst: false, pow });
     this.popSeq = (this.popSeq || 0) + 1;
   }
 
@@ -938,7 +1005,7 @@ export class Game {
       const k = g.t / POP_TIME;
       if (!g.burst && k > 0.35) {
         g.burst = true;
-        this.fx.burst(g.x, g.y, g.tint, 10, 1);
+        this.fx.pop(g.x, g.y, g.tint, g.pow);
         // 砰砰砰：每颗都有自己的一声，同一波里音高逐颗升高
         if (this.t - (this.lastPopT || 0) > 0.035) {
           if (this.t - (this.lastPopT || 0) > 0.4) this.popStep = 0;
@@ -981,6 +1048,7 @@ export class Game {
   startFever() {
     this.fever = 0;
     this.feverT = CFG.feverTime;
+    this.feverShots = CFG.feverShots;
     this.fx.text(500, 430, '灯火燎原', { size: 110, fill: ['#fffbe6', '#ffb02e', '#ff4d2e'], stroke: '#3a0a02', dur: 1.8, rise: 30, font: 'brush' });
     this.fx.ring(this.sx, this.sy, 0xffb347, 6, 0.9);
     this.fx.burst(this.sx, this.sy, 0xffb347, 40, 2.2);
@@ -988,6 +1056,7 @@ export class Game {
     this.setHitStop(0.12);
     this.ui.flash('rgba(255,170,60,0.55)');
     this.ui.setFeverMode(true);
+    this.fx.text(500, 540, `火珠 ×${CFG.feverShots} · 打哪炸哪`, { size: 44, fill: ['#fffbe6', '#ffb02e'], stroke: '#3a0a02', dur: 2, rise: 20, font: 'brush' });
     sfx.fever();
   }
 
@@ -998,12 +1067,19 @@ export class Game {
 
   feverBlast(x, y, level) {
     const hit = this.ballsNear(x, y, CFG.feverBlast);
-    this.fx.burst(x, y, 0xff8a2e, 26, 1.6);
-    this.fx.ring(x, y, 0xffb347, CFG.feverBlast / 85, 0.4);
-    this.shake(8);
+    this.fx.burst(x, y, 0xff8a2e, 30, 1.8);
+    this.fx.burst(x, y, 0xffe08a, 14, 1.1, true);
+    this.fx.ring(x, y, 0xffb347, CFG.feverBlast / 80, 0.45);
+    this.fx.ring(x, y, 0xffffff, CFG.feverBlast / 130, 0.25);
+    this.shake(9);
+    this.punch(0.025);
+    this.setHitStop(0.04);
+    buzz(25);
     sfx.blast();
     if (hit.length) {
-      this.addScore(hit.length * 20);
+      const pts = hit.length * 20 * 2;
+      this.addScore(pts);
+      this.fx.text(x, y, '+' + pts, { size: 34 + Math.min(hit.length, 8) * 2, fill: ['#fffbe6', '#ff9d3c'], font: 'num' });
       this.destroyBalls(hit, level, x, y);
     }
   }
@@ -1416,6 +1492,8 @@ export class Game {
         this.shotHitsBoss(p);
         p.view.destroy({ children: true });
         P.splice(i, 1);
+      } else if (hit && p.fire) {
+        this.feverBlast(hit.x, hit.y, 1);
       } else if (hit) {
         this.insertBall(p, hit);
         p.view.destroy({ children: true });
@@ -1620,7 +1698,14 @@ export class Game {
     this.shakeAmt *= Math.exp(-dt * 10);
     if (this.shakeAmt < 0.2) this.shakeAmt = 0;
     const s = this.shakeAmt * this.scale * CFG.shake;
-    this.world.position.set(this.baseX + (Math.random() - 0.5) * s * 2, this.baseY + (Math.random() - 0.5) * s * 2);
+    this.punchAmt = (this.punchAmt || 0) * Math.exp(-dt * 14);
+    if (this.punchAmt < 0.0005) this.punchAmt = 0;
+    const p = this.punchAmt * CFG.shake, cx = this.screenW / 2, cy = this.screenH / 2;
+    this.world.scale.set(this.scale * (1 + p));
+    this.world.position.set(
+      cx - (cx - this.baseX) * (1 + p) + (Math.random() - 0.5) * s * 2,
+      cy - (cy - this.baseY) * (1 + p) + (Math.random() - 0.5) * s * 2,
+    );
   }
 
   // 过关后的"灯路余光"：每条轨道一道光从古井倒着跑回珠串最远到过的位置，剩余轨道越长奖励越多

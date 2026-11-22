@@ -84,6 +84,21 @@ export class FX {
     }
   }
 
+  // 单颗珠子爆开：白闪 + 彩色碎光 + 快速飞散的星屑
+  pop(x, y, tint, pow = 1) {
+    this._add(TEX.glow, x, y, { tint: 0xffffff, max: 0.14, s0: 0.9 * pow, s1: 1.4 * pow, a0: 0.85 });
+    this._add(TEX.ring, x, y, { tint, max: 0.28, s0: 0.1, s1: 0.75 * pow, a0: 0.9, ease: true });
+    this.burst(x, y, tint, Math.round(14 * pow), 1.1 * pow);
+    const n = Math.round(5 * CFG.particles * pow);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, v = (520 + Math.random() * 380) * pow;
+      this._add(TEX.spark, x, y, {
+        tint: 0xffffff, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+        max: 0.22 + Math.random() * 0.15, s0: 0.45, s1: 0, drag: 6, spin: 14,
+      });
+    }
+  }
+
   trail(x, y, tint, size = 1) {
     this._add(TEX.glow, x, y, { tint, max: 0.22, s0: 0.32 * size, s1: 0.05, a0: 0.55 });
   }

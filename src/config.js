@@ -8,6 +8,7 @@ export const PARAMS = [
 
   { group: '珠串' },
   { key: 'speedMul', label: '推进速度倍率', def: 1, min: 0.3, max: 2.5, step: 0.05 },
+  { key: 'refillSpeed', label: '补珠冲入速度', def: 800, min: 0, max: 1400, step: 20 },
   { key: 'rushSpeed', label: '开局冲入速度', def: 560, min: 150, max: 1200, step: 10 },
   { key: 'retreatAcc', label: '回吸加速度', def: 2200, min: 300, max: 4000, step: 50 },
   { key: 'retreatMax', label: '回吸最大速度', def: 950, min: 200, max: 1600, step: 20 },
@@ -28,12 +29,14 @@ export const PARAMS = [
   { key: 'reverseSpeed', label: '倒流速度', def: 140, min: 40, max: 400, step: 10 },
 
   { group: '灯火燎原（Fever）' },
-  { key: 'feverNeed', label: '充满所需消除数', def: 40, min: 10, max: 120, step: 2 },
-  { key: 'feverTime', label: '持续时长(秒)', def: 8, min: 3, max: 20, step: 0.5 },
-  { key: 'feverBlast', label: '每次命中爆炸半径', def: 95, min: 0, max: 220, step: 5 },
+  { key: 'feverNeed', label: '充满所需消除数', def: 50, min: 10, max: 120, step: 2 },
+  { key: 'feverShots', label: '火珠数量', def: 6, min: 2, max: 30, step: 1 },
+  { key: 'feverTime', label: '最长持续(秒)', def: 10, min: 3, max: 20, step: 0.5 },
+  { key: 'feverBlast', label: '火珠爆炸半径', def: 100, min: 0, max: 220, step: 5 },
 
   { group: '声音' },
   { key: 'musicVol', label: '背景音乐音量', def: 0.6, min: 0, max: 1.5, step: 0.05 },
+  { key: 'rollVol', label: '滚动音量', def: 1, min: 0, max: 2.5, step: 0.05 },
 ];
 
 export const CFG = {};

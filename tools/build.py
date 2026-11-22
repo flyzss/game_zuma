@@ -7,7 +7,9 @@
 也可以用 npm run build。
 压缩包解压后的目录结构就是网站根目录（index.html 在最外层），零外网依赖。
 """
+import hashlib
 import pathlib
+import re
 import subprocess
 import sys
 import zipfile
@@ -37,6 +39,25 @@ def run(cmd: list[str]) -> None:
         sys.exit(f"失败：{' '.join(cmd)}")
 
 
+def stamp(rel: str, data: bytes, ver: str) -> bytes:
+    """给页面里引用的脚本/样式/字体加 ?v=版本号，防止浏览器混用新旧缓存（只改压缩包里的副本）"""
+    q = f"?v={ver}"
+    pats = {
+        "index.html": r'(?<==")(style\.css|lib/pixi\.min\.js|src/main\.js)(?=")',
+        "style.css": r'(?<=url\(")(fonts/[\w-]+\.woff)(?="\))',
+    }
+    pat = pats.get(rel)
+    if rel.startswith("src/") and rel.endswith(".js"):
+        pat = r"(?<=from ')(\./[\w-]+\.js)(?=')"
+    if not pat:
+        return data
+    text = data.decode("utf-8")
+    text, n = re.subn(pat, lambda m: m.group(1) + q, text)
+    if rel in pats and n == 0:
+        raise SystemExit(f"版本号替换失败：{rel}")
+    return text.encode("utf-8")
+
+
 def main() -> None:
     # 输出被管道/npm 接管时 Windows 默认用 GBK，统一成 UTF-8；真正的控制台不受影响
     if not sys.stdout.isatty():
@@ -55,12 +76,16 @@ def main() -> None:
             sys.exit(f"缺少文件：{must}")
     DIST.mkdir(exist_ok=True)
     total = 0
+    h = hashlib.sha1()
+    for p in files:
+        h.update(p.read_bytes())
+    ver = h.hexdigest()[:8]
     with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for p in files:
             rel = p.relative_to(ROOT).as_posix()
-            z.write(p, rel)
+            z.writestr(rel, stamp(rel, p.read_bytes(), ver))
             total += p.stat().st_size
-    print(f"{len(files)} 个文件，原始 {total / 1024:.0f} KB → {OUT.relative_to(ROOT).as_posix()} {OUT.stat().st_size / 1024:.0f} KB")
+    print(f"{len(files)} 个文件，原始 {total / 1024:.0f} KB → {OUT.relative_to(ROOT).as_posix()} {OUT.stat().st_size / 1024:.0f} KB（版本 {ver}）")
 
 
 if __name__ == "__main__":

@@ -91,6 +91,56 @@ export const music = {
   },
 };
 
+// ---------------- 珠串滚动声 ----------------
+// 一段循环的"细碎咔哒 + 轻噪声"，播放速率随珠串速度变化：越快越密、越高、越响
+// 带通滤波放在中高频，避开背景音乐的低音
+const roll = {
+  src: null, filter: null, gain: null, v: 0,
+  init() {
+    const len = ctx.sampleRate * 2;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * 0.12;
+    // 每秒约 26 个"咔哒"颗粒（珠子之间、珠子与槽的碰擦），间隔、强弱随机
+    let i = 0;
+    while (i < len) {
+      const amp = 0.35 + Math.random() * 0.65, dec = 0.0015 + Math.random() * 0.003;
+      const n = Math.min(len - i, Math.ceil(dec * ctx.sampleRate * 4));
+      for (let k = 0; k < n; k++) d[i + k] += (Math.random() * 2 - 1) * amp * Math.exp(-k / (dec * ctx.sampleRate));
+      i += Math.round(ctx.sampleRate * (0.022 + Math.random() * 0.032));
+    }
+    // 首尾淡入淡出，循环时不爆音
+    const f = 400;
+    for (let k = 0; k < f; k++) { d[k] *= k / f; d[len - 1 - k] *= k / f; }
+    this.src = ctx.createBufferSource();
+    this.src.buffer = buf;
+    this.src.loop = true;
+    this.filter = ctx.createBiquadFilter();
+    this.filter.type = 'bandpass';
+    this.filter.Q.value = 0.8;
+    this.filter.frequency.value = 1500;
+    this.gain = ctx.createGain();
+    this.gain.gain.value = 0;
+    this.src.connect(this.filter).connect(this.gain).connect(master);
+    this.src.start();
+  },
+  // v：珠串速度（世界坐标/秒，负数为倒流）
+  set(v) {
+    if (!ctx || ctx.state !== 'running') return;
+    if (!this.src) this.init();
+    const a = Math.abs(v), t = ctx.currentTime;
+    // 正常推进只有一点底噪；冲入、补珠、回吸、潮涌时明显
+    const vol = a < 5 ? 0 : Math.min(0.42, 0.035 + Math.max(0, a - 50) / 900 * 0.3) * CFG.rollVol;
+    let rate = Math.min(2.4, 0.55 + a / 520);
+    let freq = Math.min(3600, 1300 + a * 1.6);
+    if (v < 0 && !this.retreat) { rate *= 0.75; freq *= 0.7; }   // 倒流：音调往下沉
+    this.gain.gain.setTargetAtTime(vol, t, vol > this.v ? 0.04 : 0.12);
+    this.src.playbackRate.setTargetAtTime(rate, t, 0.06);
+    this.filter.frequency.setTargetAtTime(freq, t, 0.06);
+    this.v = vol;
+  },
+};
+
 export const sfx = {
   unlock() {
     if (!ctx) {
@@ -108,6 +158,8 @@ export const sfx = {
     music.start();
   },
   suspend() { if (ctx && ctx.state === 'running') ctx.suspend(); },
+  // 每帧调用：v 为珠串当前最快的移动速度，retreat 表示是回吸（不是倒流道具）
+  roll(v, retreat = false) { roll.retreat = retreat; roll.set(v); },
   get muted() { return muted; },
   setMuted(m) {
     muted = m;
