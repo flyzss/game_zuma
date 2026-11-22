@@ -9,11 +9,19 @@
 
 纯静态网页 · 零外网依赖 · 电脑与手机触屏都能玩
 
-<img src="docs/menu.jpg" width="240" alt="关卡选择"> &nbsp;
-<img src="docs/gameplay.jpg" width="240" alt="游戏画面"> &nbsp;
-<img src="docs/boss.jpg" width="240" alt="首领关：驱年兽">
+### [▶ 在线试玩](https://hbycrj.com/games/zuma/)
+
+作者：[清河县翼程软件开发](https://hbycrj.com) · [hbycrj.com](https://hbycrj.com)
+
+<a href="https://hbycrj.com/games/zuma/"><img src="docs/menu.jpg" width="240" alt="萤灯连珠 关卡选择"></a> &nbsp;
+<a href="https://hbycrj.com/games/zuma/"><img src="docs/gameplay.jpg" width="240" alt="萤灯连珠 游戏画面"></a> &nbsp;
+<a href="https://hbycrj.com/games/zuma/"><img src="docs/boss.jpg" width="240" alt="萤灯连珠 首领关：驱年兽"></a>
 
 </div>
+
+## 在线试玩
+
+打开 **<https://hbycrj.com/games/zuma/>** 即可直接游玩，电脑和手机浏览器都支持，无需下载安装。
 
 ## 玩法
 
@@ -141,6 +149,12 @@ npm run fonts
 - [PixiJS](https://pixijs.com/) 7 —— WebGL 渲染
 - 原生 ES Modules，无打包工具、无框架
 - 贴图在运行时用 Canvas 2D 绘制，音效用 WebAudio 实时合成，仓库里没有图片或音频素材
+
+## 作者
+
+由 **[清河县翼程软件开发](https://hbycrj.com)** 开发并开源。
+
+我们承接小程序、App、网站与企业软件定制开发，详见官网 [hbycrj.com](https://hbycrj.com)。
 
 ## 许可
 

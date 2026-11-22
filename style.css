@@ -367,6 +367,14 @@ body.boss #effects { top: calc(max(10px, env(safe-area-inset-top)) + 92px); }
 .meta .total { font-family: var(--f-num); font-weight: 600; color: var(--gold); font-size: 18px; letter-spacing: 1px; }
 .meta .total b { color: var(--gold-hi); font-weight: 800; }
 .howto { font-size: 13px; color: var(--muted); letter-spacing: 1px; line-height: 1.9; }
+.credit {
+  margin-top: 18px; font-size: 13px; letter-spacing: 2px; color: rgba(185, 177, 212, .7);
+  text-decoration: none; padding: 8px 14px; border-radius: 999px;
+  border: 1px solid transparent; transition: color .2s, border-color .2s;
+  animation: rise .8s .35s both;
+}
+.credit b { font-weight: 400; letter-spacing: 1px; color: rgba(255, 210, 122, .8); }
+.credit:hover { color: var(--text); border-color: var(--line); }
 .howto kbd { font-family: var(--f-ui); color: var(--gold); padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; margin: 0 2px; }
 
 @media (max-width: 600px) {

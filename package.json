@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "license": "MIT",
+  "author": "清河县翼程软件开发 (https://hbycrj.com)",
+  "homepage": "https://hbycrj.com/games/zuma/",
   "repository": "github:flyzss/game_zuma",
   "description": "萤灯连珠：轨道珠链三消游戏（PixiJS，纯静态，无构建依赖）",
   "scripts": {
