@@ -43,18 +43,28 @@ def stamp(rel: str, data: bytes, ver: str) -> bytes:
     """给页面里引用的脚本/样式/字体加 ?v=版本号，防止浏览器混用新旧缓存（只改压缩包里的副本）"""
     q = f"?v={ver}"
     pats = {
-        "index.html": r'(?<==")(style\.css|lib/pixi\.min\.js|src/main\.js)(?=")',
+        "index.html": r'(?<==")(style\.css|lib/pixi\.min\.js|src/main\.js|fonts/[\w-]+\.woff)(?=")',
         "style.css": r'(?<=url\(")(fonts/[\w-]+\.woff)(?="\))',
     }
     pat = pats.get(rel)
     if rel.startswith("src/") and rel.endswith(".js"):
-        pat = r"(?<=from ')(\./[\w-]+\.js)(?=')"
+        # 模块路径：import … from './x.js'、import './x.js'、import('./x.js')，单双引号都算
+        pat = r"(?<=['\"])(\./[\w-]+\.js)(?=['\"])"
     if not pat:
         return data
     text = data.decode("utf-8")
     text, n = re.subn(pat, lambda m: m.group(1) + q, text)
     if rel in pats and n == 0:
         raise SystemExit(f"版本号替换失败：{rel}")
+    # 兜底检查：不能留下没带版本号的本地模块 / 资源引用，否则上线后新旧缓存混用会白屏
+    if rel.startswith("src/"):
+        left = re.findall(r"['\"]\./[\w-]+\.js['\"]", text)
+    elif rel == "index.html":
+        left = re.findall(r'(?:src|href)="((?:src|lib|fonts)/[^"?]+|style\.css)"', text)
+    else:
+        left = re.findall(r'url\("(fonts/[^"?]+)"\)', text)
+    if left:
+        raise SystemExit(f"{rel} 里有未加版本号的引用：{left}")
     return text.encode("utf-8")
 
 

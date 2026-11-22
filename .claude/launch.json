@@ -4,8 +4,28 @@
     {
       "name": "lantern-orbs",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "5173", "--bind", "127.0.0.1"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5173",
+        "--bind",
+        "127.0.0.1"
+      ],
       "port": 5173
+    },
+    {
+      "name": "lantern-orbs-dist",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5174",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "dist/site"
+      ],
+      "port": 5174
     }
   ]
 }

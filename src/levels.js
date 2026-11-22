@@ -152,15 +152,32 @@ export const ENDLESS = {
   path: [[150, 960], ...spiral({ r0: 462, r1: 170, a0: 90, turns: 2.25, ccw: true })],
 };
 
-// 第 n 重（从 1 开始）的难度：前 10 重快速升温，之后持续变难、没有上限
+// 第 n 重（从 1 开始）的难度：前 10 重快速升温，之后缓慢但持续地变难、没有上限
+// 夜深：压力一层层错开加入，每 4～5 重才多一样新花样，避免一下子陡起来
+export const NIGHT_DEPTHS = [
+  { n: 16, text: '夜深 · 墨染：不时有墨点把珠子染成别的颜色' },
+  { n: 20, text: '夜深 · 第六种颜色出现' },
+  { n: 25, text: '夜深 · 潮涌更急更猛' },
+  { n: 30, text: '夜更深 · 墨染更密' },
+];
 export function endlessStage(n) {
-  const speed = n <= 10 ? 42 + (n - 1) * 6 : Math.min(150, 96 + (n - 10) * 4);
+  // 速度：1～10 重每重 +6，10～24 重每重 +3，之后每重 +2.5（线性，不封顶）
+  const speed = n <= 10 ? 42 + (n - 1) * 6 : n <= 24 ? 96 + (n - 10) * 3 : 138 + (n - 24) * 2.5;
+  const late = Math.max(0, n - 25);
   return {
     speed,
-    colors: n <= 3 ? 4 : 5,
+    colors: n <= 3 ? 4 : n < 20 ? 5 : 6,
     zip: Math.max(0.12, 0.45 - (n - 1) * 0.03),        // 送分的拉链段越来越少
     setup: Math.max(0.3, 0.4 - Math.max(0, n - 8) * 0.01),
     depth: n <= 2 ? [1, 2] : n <= 5 ? [1, 3] : [2, 4],
-    surge: n >= 3 ? { every: Math.max(7, 22 - (n - 3) * 1.5), mul: n >= 10 ? 2.4 : 2.1, dur: n >= 10 ? 1.8 : 1.5 } : null,
+    surge: n >= 3 ? {
+      every: n < 25 ? Math.max(7, 22 - (n - 3) * 1.5) : Math.max(5.5, 7 - late * 0.1),
+      mul: n < 10 ? 2.1 : n < 25 ? 2.4 : Math.min(2.9, 2.45 + late * 0.03),
+      dur: n < 10 ? 1.5 : n < 25 ? 1.8 : 2,
+    } : null,
+    ink: n >= 16 ? {
+      every: Math.max(7, 16 - (n - 16) * 0.3),
+      count: Math.min(6, n < 30 ? 2 + Math.floor((n - 16) / 5) : 4 + Math.floor((n - 30) / 5)),
+    } : null,
   };
 }

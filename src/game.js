@@ -1,10 +1,10 @@
 import { Path } from './path.js';
-import { LEVELS, ENDLESS, ENDLESS_STAGE, endlessStage } from './levels.js';
+import { LEVELS, ENDLESS, ENDLESS_STAGE, endlessStage, NIGHT_DEPTHS } from './levels.js';
 import { COLORS, TEX, RAINBOW, POWERS } from './textures.js';
 import { FX } from './fx.js';
 import { sfx, music } from './audio.js';
 import { CFG } from './config.js';
-import { TAL, rollTalismans, prismEvery, COMBO_TIERS, comboTier } from './perks.js';
+import { TAL, rollTalismans, prismEvery, COMBO_TIERS, comboTier, choiceStage, CURSE_SPEED, CURSE_SCORE } from './perks.js';
 import { DAILY, dailyLevel } from './daily.js';
 
 // 固定参数（改了会影响关卡布局，不放进调参面板）
@@ -122,22 +122,30 @@ export class Game {
   perk(id) { return this.perks[id] || 0; }
 
   // 选中一张灯符
-  pickPerk(id) {
-    if (this.state !== 'choose') return;
-    const t = TAL[id];
-    if (!t) return;
+  pickPerk(k, replace = null) {
+    if (this.state !== 'choose' || !this.choices?.[k]) return;
+    const c = this.choices[k];
+    const id = c.id, t = c.t;
+    if (c.swap && !replace) return;
+    if (replace) {
+      delete this.perks[replace];
+      if (replace === 'guard') this.guardLeft = 0;
+      this.fx.text(this.sx, this.sy - 170, `舍弃 ${TAL[replace].name}`, { size: 34, fill: ['#e8e4ff', '#9a96c8'], stroke: '#14082a', dur: 1.2, rise: 40, font: 'brush' });
+    }
     if (t.once) {
       if (id === 'rewind') { this.reverseT = 4; this.slowT = 0; sfx.reverse(); }
     } else {
-      this.perks[id] = (this.perks[id] || 0) + 1;
-      if (id === 'guard') this.guardLeft++;
+      const add = c.double ? 2 : 1;
+      this.perks[id] = Math.min(t.max, (this.perks[id] || 0) + add);
+      if (id === 'guard') this.guardLeft += add;
+      if (c.double) this.curses++;
     }
     this.perkLog.push(id);
     this.run.perks = this.perkLog.length;
     this.choices = null;
     this.state = 'play';
     this.ui.close();
-    this.fx.text(this.sx, this.sy - 120, `${t.name}${t.once ? '' : ' · ' + '壹贰叁肆伍'[this.perks[id] - 1]}`, { size: 46, fill: ['#fffbe6', '#ffd27a'], stroke: '#3a1606', dur: 1.4, rise: 50, font: 'brush' });
+    this.fx.text(this.sx, this.sy - 120, `${c.double ? '祸福 · ' : ''}${t.name}${t.once ? '' : ' · ' + '壹贰叁肆伍'[this.perks[id] - 1]}`, { size: 46, fill: ['#fffbe6', '#ffd27a'], stroke: '#3a1606', dur: 1.4, rise: 50, font: 'brush' });
     this.fx.ring(this.sx, this.sy, 0xffd27a, 3.4, 0.7);
     this.fx.burst(this.sx, this.sy, 0xffe08a, 24, 1.6);
     this.ui.flash('rgba(255,225,140,0.3)');
@@ -145,7 +153,7 @@ export class Game {
   }
 
   openChoice() {
-    this.choices = rollTalismans(this.perks);
+    this.choices = rollTalismans(this.perks, this.stage);
     if (!this.choices.length) return;
     this.state = 'choose';
     sfx.powerAppear();
@@ -503,6 +511,8 @@ export class Game {
     this.chooseT = 0;
     this.choices = null;
     this.revives = 0;
+    this.curses = 0;
+    this.inkT = 0;
     this.ui.setCombo?.(0, -1);
     this.bestChain = 0;
     this.removedCount = 0;
@@ -836,7 +846,7 @@ export class Game {
       this.levelTime += gdt;
       this.surgeT = Math.max(0, this.surgeT - gdt);
       this.updateSurge(gdt);
-      if (this.endless) this.updateEndless(gdt);
+      if (this.endless) { this.updateEndless(gdt); this.updateInkRain(gdt); }
       this.slowT = Math.max(0, this.slowT - gdt);
       this.reverseT = Math.max(0, this.reverseT - gdt);
       this.ui.setEffects(this.slowT, this.reverseT);
@@ -889,7 +899,7 @@ export class Game {
     this.run.stage = n;
     this.emit('stage', n);
     this.guardLeft = this.perk('guard');
-    this.chooseT = 1.7;   // 升重大字放完再选灯符
+    if (choiceStage(n)) this.chooseT = 1.7;   // 升重大字放完再选灵符
     const hadSurge = !!this.lv.surge;
     Object.assign(this.lv, endlessStage(n));
     if (this.lv.surge && !hadSurge) { this.waveCd = this.lv.surge.every; this.waveWarned = false; }
@@ -900,9 +910,39 @@ export class Game {
     this.fx.text(500, 520, `+${bonus}`, { size: 44, font: 'num', dur: 1.6 });
     this.fx.ring(this.sx, this.sy, 0xffd27a, 4, 0.8);
     this.ui.flash('rgba(255,220,150,0.3)');
-    if (n === 3) this.ui.hint('潮涌来了：看到提示就先清理靠近古井的珠子', 4000);
+    const depth = NIGHT_DEPTHS.find((d) => d.n === n);
+    if (depth) {
+      this.fx.text(500, 600, '夜深', { size: 80, fill: ['#e8e4ff', '#8a7cff'], stroke: '#0a0420', dur: 2.2, rise: 20, font: 'brush' });
+      this.ui.hint(depth.text, 5000);
+      if (this.lv.ink) this.inkT = 4;
+      if (this.chooseT > 0) this.chooseT = 2.5;   // 等「夜深」大字放完
+    } else if (n === 3) this.ui.hint('潮涌来了：看到提示就先清理靠近古井的珠子', 4000);
     else if (n === 4) this.ui.hint('出现第五种颜色', 3000);
+    else if (n === 13) this.ui.hint('夜色渐浓：之后每两重才能选一次灵符', 4000);
     sfx.powerAppear();
+  }
+
+  // 无尽夜深：墨点从天而降，把几颗珠子染成别的颜色
+  updateInkRain(dt) {
+    const ink = this.lv.ink;
+    if (!ink || this.tracks.some((tr) => tr.rush)) return;
+    this.inkT -= dt;
+    if (this.inkT > 0) return;
+    this.inkT = ink.every * (0.85 + Math.random() * 0.3);
+    const cand = [...this.allBalls()].filter((x) => this.onBoard(x) && x.grow >= 1 && !x.power && x.s < x.tr.path.length * 0.9);
+    for (let i = cand.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [cand[i], cand[j]] = [cand[j], cand[i]]; }
+    const n = Math.min(cand.length, ink.count);
+    for (let i = 0; i < n; i++) {
+      const sx = 150 + Math.random() * 700, sy = -60;
+      const s = new PIXI.Sprite(TEX.ink);
+      s.anchor.set(0.5); s.scale.set(0.5); s.position.set(sx, sy);
+      this.orbLayer.addChild(s);
+      this.inks.push({ s, sx, sy, target: cand[i], t: 0, dur: 0.8 + i * 0.08, side: Math.random() < 0.5 ? -1 : 1 });
+    }
+    if (n) {
+      this.fx.text(500, 200, '墨染', { size: 56, fill: ['#efe0ff', '#a066ff'], stroke: '#14052a', dur: 1.1, rise: 20, font: 'brush' });
+      sfx.ink();
+    }
   }
 
   // 潮涌：后期关卡定时让珠串猛冲一小段，先预警 1.2 秒
@@ -968,7 +1008,7 @@ export class Game {
     if (this.state === 'lose') return 1100;
     if (this.boss?.dying) return 0;
     const lead = this.lead(tr);
-    const base = this.lv.speed * CFG.speedMul * (1 - 0.1 * this.perk('calm')) * (1 + 0.15 * this.perk('gamble'));
+    const base = this.lv.speed * CFG.speedMul * (1 - 0.1 * this.perk('calm')) * (1 + 0.15 * this.perk('gamble')) * (1 + CURSE_SPEED * this.curses);
     if (tr.rush) {
       if (lead >= tr.rushTo) tr.rush = false;
       else return Math.max(base, CFG.rushSpeed * (1 - (lead / tr.rushTo) ** 3));
@@ -976,7 +1016,7 @@ export class Game {
     // 关内加速：越往后珠串推得越快
     let v = base * (1 + this.lv.ramp * Math.min(1, this.levelTime / RAMP_TIME));
     if (this.boss?.enraged) v *= 1.15;
-    if (this.waveT > 0) v *= (1 + (this.lv.surge.mul - 1) * (1 - 0.35 * this.perk('tide'))) * Math.min(1, this.waveT / 0.3);   // 潮涌
+    if (this.waveT > 0) v *= (1 + (this.lv.surge.mul - 1) * (1 - 0.25 * this.perk('tide'))) * Math.min(1, this.waveT / 0.3);   // 潮涌
     if (this.surgeT > 0) v *= 2.8;          // 年兽怒吼：珠串猛冲
     if (lead > 0.8) v *= CFG.dangerSlow;    // 临近终点稍微放慢，给翻盘机会
     // 补珠：最后一段（被推动的那段）还在起点附近时快速冲入，清空后不用干等
@@ -1265,7 +1305,7 @@ export class Game {
   }
 
   addScore(pts) {
-    if (this.endless) pts = Math.round(pts * (1 + 0.25 * this.perk('toad')) * 1.5 ** this.perk('gamble'));
+    if (this.endless) pts = Math.round(pts * (1 + 0.25 * this.perk('toad')) * 1.5 ** this.perk('gamble') * (1 + CURSE_SCORE * this.curses));
     if (this.lv.scoreMul) pts = Math.round(pts * this.lv.scoreMul);
     this.score += pts;
     this.ui.setScore(this.score);

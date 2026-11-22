@@ -667,11 +667,13 @@ body.touch #hint { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 86px); 
 .ach .a-coin { font-family: var(--f-num); font-size: 12px; color: rgba(255, 210, 122, .55); }
 
 /* 印章：方形朱印，竖排从右往左 */
-.seal-s { width: 62px; height: 62px; flex: none; display: grid; place-items: center; border-radius: 6px;
+.seal-s { width: 62px; height: 62px; flex: none; display: grid; grid-template-rows: 1fr 1fr; padding: 5px 4px; gap: 0 1px; border-radius: 6px; overflow: hidden;
+  font-family: var(--f-brush); font-size: 23px; line-height: 1;
   border: 2.5px solid rgba(185, 177, 212, .25); color: rgba(185, 177, 212, .3); transform: rotate(-3deg); }
-.seal-s span { writing-mode: vertical-rl; font-family: var(--f-brush); line-height: 1; font-size: 23px; height: 2.1em; letter-spacing: .05em; }
-.seal-s.n2 span { font-size: 26px; height: auto; }
-.seal-s.n3 span { font-size: 22px; }
+.seal-s i { font-style: normal; display: grid; place-items: center; min-width: 0; min-height: 0; }
+.seal-s i.tall { font-size: 1.3em; }
+.seal-s.n2 { font-size: 25px; }
+.seal-s.n1 { font-size: 34px; }
 .seal-s.on { color: #fff1e0; border-color: #ffb8a0;
   background: linear-gradient(150deg, #e2412f, #9c1912);
   box-shadow: inset 0 0 0 2px rgba(255, 220, 200, .45), 0 3px 10px rgba(160, 20, 10, .45); }
@@ -708,7 +710,7 @@ body.touch #hint { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 86px); 
   transition: transform .45s cubic-bezier(.3, 1.4, .5, 1), opacity .3s;
 }
 #toast.show { transform: translate(-50%, 0); opacity: 1; }
-#toast .seal-s { width: 54px; height: 54px; }
+#toast .seal-s { width: 54px; height: 54px; font-size: 20px; padding: 4px 3px; }
 #toast.show .seal-s { animation: stampIn .4s .2s cubic-bezier(.3, 1.6, .5, 1) both; }
 #toast .t-body { display: flex; flex-direction: column; min-width: 0; }
 #toast em { font-style: normal; font-size: 12px; letter-spacing: .4em; color: #a23a1a; }
@@ -971,4 +973,42 @@ body.boss #combo { top: calc(max(10px, env(safe-area-inset-top)) + 128px); }
   .ball-row { width: 92px; }
   .ball-row img { width: 42px; height: 42px; }
   .trail-pic { width: 120px !important; }
+}
+
+/* ============ 灵符：祸福符 / 囊满替换 ============ */
+.ch-head p b { font-family: var(--f-num); color: var(--gold-hi); }
+.tl-tag {
+  position: absolute; right: 10px; top: 20px; padding: 4px 4px; border-radius: 4px; writing-mode: vertical-rl;
+  font-family: var(--f-brush); font-size: 15px; line-height: 1; color: #fff3d6;
+}
+.tl-tag.curse { background: #3a0a22; box-shadow: 0 0 0 1.5px #ff5a8a; }
+.tl-tag.swap { background: #2a2552; box-shadow: 0 0 0 1.5px #9a8cff; right: auto; left: 10px; }
+.talisman.rare .tl-tag.swap { top: 64px; }
+.talisman.curse {
+  --paper: #e9b4c4;
+  background:
+    linear-gradient(180deg, transparent 12px, rgba(120, 10, 40, .6) 12px 14px, transparent 14px calc(100% - 14px), rgba(120, 10, 40, .6) calc(100% - 14px) calc(100% - 12px), transparent calc(100% - 12px)),
+    radial-gradient(ellipse at 40% 20%, #ffe1ea, var(--paper) 55%, #b8607e);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, .55), 0 0 26px rgba(255, 60, 120, .45), inset 0 0 26px rgba(120, 10, 40, .35);
+}
+.talisman.curse .tl-ch { color: #7a0a2e; border-color: rgba(122, 10, 46, .7); }
+.tl-cost { font-size: 12px; line-height: 1.5; color: #7a0a2e; padding: 4px 6px; border-top: 1px dashed rgba(122, 10, 46, .45); }
+
+.swap-list { margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; width: 100%; max-width: 760px; }
+.swap-item {
+  display: grid; grid-template-columns: 44px 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center; text-align: left;
+  padding: 10px 14px; border-radius: 10px; cursor: pointer; color: var(--text); font-family: var(--f-ui);
+  background: rgba(20, 18, 46, .75); border: 1.5px solid rgba(255, 255, 255, .1);
+  transition: border-color .15s, transform .12s;
+}
+.swap-item:hover { border-color: #ff6a6a; transform: translateY(-2px); }
+.swap-item b { grid-row: span 2; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 6px;
+  font-family: var(--f-brush); font-weight: 400; font-size: 28px; color: #b01e14; background: linear-gradient(160deg, #fff1b8, #e0b54a); }
+.swap-item span { font-size: 16px; letter-spacing: 1px; color: var(--gold-hi); }
+.swap-item em { font-style: normal; font-size: 12px; color: var(--muted); }
+.swap-back { margin-top: 18px; width: 200px; }
+@media (max-width: 600px) {
+  .tl-tag { right: 4px; top: 16px; font-size: 13px; }
+  .tl-cost { font-size: 11px; padding: 2px; }
+  .swap-list { grid-template-columns: 1fr; }
 }

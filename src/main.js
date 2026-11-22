@@ -6,7 +6,7 @@ import { loadCfg } from './config.js';
 import { initDevPanel } from './devpanel.js';
 import { COLORS, RAINBOW, SKINS, SKIN_CANVAS, BALL_CANVAS, TRAIL_CANVAS } from './textures.js';
 import { store, meta, ACHIEVEMENTS, CHALLENGES, chalState, SHELVES, REVIVE_COST } from './meta.js';
-import { TAL, COMBO_TIERS } from './perks.js';
+import { TAL, COMBO_TIERS, BAG_SIZE, CURSE_SPEED, CURSE_SCORE } from './perks.js';
 import { DAILY, dailyLevel, prevDayKey } from './daily.js';
 import { drawShareCard, SHARE_URL } from './share.js';
 
@@ -185,23 +185,48 @@ const ui = {
     el.classList.add('bump');
   },
 
-  // 无尽模式：三选一灯符
+  // 无尽模式：三选一灵符（choices 来自 rollTalismans）
   showChoice(list, perks, stage) {
-    const cards = list.map((t, k) => {
-      const lv = t.once ? 0 : (perks[t.id] || 0) + 1;
-      return `<button class="talisman ${t.rare ? 'rare' : ''}" data-act="perk" data-perk="${t.id}" style="--i:${k}">
+    const owned = Object.keys(perks).filter((k) => perks[k] > 0).length;
+    const cards = list.map((c, k) => {
+      const t = c.t;
+      const cur = perks[t.id] || 0;
+      const lv = t.once ? 0 : Math.min(t.max, cur + (c.double ? 2 : 1));
+      const tag = (c.double ? '<span class="tl-tag curse">祸福</span>' : '') + (c.swap ? '<span class="tl-tag swap">需替换</span>' : '');
+      return `<button class="talisman ${t.rare ? 'rare' : ''} ${c.double ? 'curse' : ''}" data-act="perk" data-k="${k}" style="--i:${k}">
+        ${tag}
         <span class="tl-ch">${t.ch}</span>
         <span class="tl-name">${t.name}</span>
-        <span class="tl-lv">${t.once ? '一次性' : `第${'壹贰叁肆伍'[lv - 1]}层${t.max ? ` / ${'壹贰叁肆伍'[t.max - 1]}` : ''}`}</span>
+        <span class="tl-lv">${t.once ? '一次性' : `${c.double ? '连升两层 · ' : ''}第${CN_LV[lv - 1]}层 / ${CN_LV[t.max - 1]}`}</span>
         <span class="tl-desc">${t.desc(lv || 1)}</span>
+        ${c.double ? `<span class="tl-cost">代价：珠串 +${Math.round(CURSE_SPEED * 100)}% 速度<br>补偿：得分 +${Math.round(CURSE_SCORE * 100)}%</span>` : ''}
         ${isTouch ? '' : `<kbd>${k + 1}</kbd>`}
       </button>`;
     }).join('');
     this.show(`
       <div class="choose">
-        <div class="ch-head"><span class="ch-stage">${stageLabel(stage)}</span><h2>择一道灵符</h2><p>灵符效果可以叠加，整局有效</p></div>
+        <div class="ch-head"><span class="ch-stage">${stageLabel(stage)}</span><h2>择一道灵符</h2>
+          <p>灵符囊 <b>${owned} / ${BAG_SIZE}</b> 格 · 已有的灵符可继续升层，囊满后新灵符要替换旧的</p></div>
         <div class="tl-row">${cards}</div>
         ${perkStrip(perks)}
+      </div>`);
+  },
+
+  // 囊满时选了新灵符：挑一道旧符舍弃
+  showSwap(k) {
+    const c = game.choices[k];
+    const perks = game.perks;
+    const olds = Object.keys(perks).filter((id) => perks[id] > 0).map((id) => {
+      const t = TAL[id];
+      return `<button class="swap-item" data-act="perkswap" data-k="${k}" data-old="${id}">
+        <b>${t.ch}</b><span>${t.name} · ${CN_LV[perks[id] - 1]}层</span><em>${t.desc(perks[id])}</em></button>`;
+    }).join('');
+    this.show(`
+      <div class="choose">
+        <div class="ch-head"><span class="ch-stage">灵符囊已满</span><h2>舍一道换「${c.t.name}」</h2>
+          <p>被舍弃的灵符效果立刻消失</p></div>
+        <div class="swap-list">${olds}</div>
+        <button class="btn-ghost swap-back" data-act="perkback">再想想</button>
       </div>`);
   },
 
@@ -676,8 +701,18 @@ const imgUrl = (k, c) => (imgCache[k] ||= c.toDataURL());
 
 // 印章：两到四个字，竖排从右往左
 function sealHtml(text, on) {
-  const n = [...text].length;
-  return `<div class="seal-s n${n} ${on ? 'on' : ''}"><span>${text}</span></div>`;
+  // 不用 writing-mode 竖排（部分手机浏览器字宽稍大就会一字一列、冲出印章），
+  // 改成逐字放进格子：每列两个字，从右往左读；奇数字数时最后一个字占满一整列
+  const chars = [...text];
+  const n = chars.length;
+  const cols = n <= 2 ? 1 : Math.ceil(n / 2);
+  const cells = chars.map((ch, i) => {
+    const col = cols - Math.floor(i / 2);
+    const tall = i === n - 1 && n % 2 === 1 && n > 1;
+    const row = tall ? '1 / span 2' : String((i % 2) + 1);
+    return `<i class="${tall ? 'tall' : ''}" style="grid-column:${col};grid-row:${row}">${ch}</i>`;
+  }).join('');
+  return `<div class="seal-s n${n} ${on ? 'on' : ''}" style="grid-template-columns:repeat(${cols},1fr)">${cells}</div>`;
 }
 
 // 挑战列表：delay 有值时新完成的项逐条盖章
@@ -797,7 +832,13 @@ $('screen').addEventListener('click', (e) => {
     const got = meta.buy(b.dataset.kind, b.dataset.skin);
     if (got) { applySkin(); sfx.rainbow(); ui.showShop(); got.forEach(toast); }
   } else if (act === 'perk') {
-    game.pickPerk(b.dataset.perk);
+    const k = +b.dataset.k;
+    if (game.choices?.[k]?.swap) ui.showSwap(k);
+    else game.pickPerk(k);
+  } else if (act === 'perkswap') {
+    game.pickPerk(+b.dataset.k, b.dataset.old);
+  } else if (act === 'perkback') {
+    ui.showChoice(game.choices, game.perks, game.stage);
   } else if (act === 'equip') {
     if (meta.equip(b.dataset.kind, b.dataset.skin)) { applySkin(); sfx.powerAppear(); ui.showShop(); }
   } else if (act === 'shoptab') {
@@ -833,7 +874,11 @@ document.addEventListener('pointerdown', () => sfx.unlock(), { capture: true });
 window.addEventListener('keydown', (e) => {
   if (game.state !== 'choose' || !game.choices) return;
   const k = +e.key;
-  if (k >= 1 && k <= game.choices.length) { sfx.swap(); game.pickPerk(game.choices[k - 1].id); }
+  if (k >= 1 && k <= game.choices.length && $('screen').querySelector('.talisman')) {
+    sfx.swap();
+    if (game.choices[k - 1].swap) ui.showSwap(k - 1);
+    else game.pickPerk(k - 1);
+  }
 });
 
 let resizeT = 0;

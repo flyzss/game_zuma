@@ -5,8 +5,8 @@ export const TALISMANS = [
   { id: 'ember', ch: '燃', name: '久燃符', desc: (l) => `每次燎原多 ${2 * l} 发火珠`, max: 3, w: 8 },
   { id: 'prism', ch: '虹', name: '虹光符', desc: (l) => `每 ${prismEvery(l)} 发必出一颗彩珠`, max: 3, w: 8 },
   { id: 'chain', ch: '环', name: '连环符', desc: (l) => `连锁得分 +${50 * l}%`, max: 3, w: 9 },
-  { id: 'calm', ch: '稳', name: '沉稳符', desc: (l) => `珠串推进速度 -${10 * l}%`, max: 3, w: 10 },
-  { id: 'tide', ch: '潮', name: '定海符', desc: (l) => `潮涌威力 -${35 * l}%`, max: 2, w: 6 },
+  { id: 'calm', ch: '稳', name: '沉稳符', desc: (l) => `珠串推进速度 -${10 * l}%`, max: 2, w: 9 },
+  { id: 'tide', ch: '潮', name: '定海符', desc: (l) => `潮涌威力 -${25 * l}%`, max: 2, w: 6 },
   { id: 'treasure', ch: '宝', name: '聚宝符', desc: (l) => `道具珠出现频率 +${Math.round((1 / (1 - 0.25 * l) - 1) * 100)}%`, max: 2, w: 8 },
   { id: 'thunder', ch: '雷', name: '雷火符', desc: (l) => `炸裂范围 +${40 * l}%，火珠爆炸范围 +${20 * l}%`, max: 2, w: 7 },
   { id: 'long', ch: '缓', name: '长生符', desc: (l) => `缓行与倒流持续时间 +${50 * l}%`, max: 2, w: 7 },
@@ -19,16 +19,38 @@ export const TALISMANS = [
 export const TAL = Object.fromEntries(TALISMANS.map((t) => [t.id, t]));
 export function prismEvery(l) { return Math.max(6, 15 - 3 * l); }
 
-// 随机抽三张不重复、未满层的灯符
-export function rollTalismans(perks, n = 3) {
-  const pool = TALISMANS.filter((t) => t.once || (perks[t.id] || 0) < t.max);
+export const BAG_SIZE = 6;          // 灵符囊：最多带 6 种不同的灵符
+export const CURSE_SPEED = 0.06;    // 祸福符的代价：每张让珠串快 6%
+export const CURSE_SCORE = 0.1;     // 同时得分 +10%，让人愿意冒险
+
+// 第几重可以选灵符：前期每重都给，后期越来越少
+export function choiceStage(n) {
+  if (n <= 12) return true;
+  if (n <= 24) return n % 2 === 0;
+  return n % 3 === 0;
+}
+
+// 抽三张：未满层的才会出现；囊满后新种类需要替换旧符，已有的权重翻倍；
+// 第 15 重起有一定几率变成「祸福符」：一次升两层，但珠串加速
+export function rollTalismans(perks, stage = 1, n = 3) {
+  const owned = Object.keys(perks).filter((k) => perks[k] > 0);
+  const full = owned.length >= BAG_SIZE;
+  const pool = TALISMANS.filter((t) => t.once || (perks[t.id] || 0) < t.max)
+    .map((t) => ({ t, w: t.w * (full && owned.includes(t.id) ? 2 : 1) }));
   const out = [];
   while (out.length < n && pool.length) {
     let tot = 0;
-    for (const t of pool) tot += t.w;
+    for (const p of pool) tot += p.w;
     let r = Math.random() * tot, k = 0;
     for (; k < pool.length - 1; k++) { r -= pool[k].w; if (r <= 0) break; }
-    out.push(pool.splice(k, 1)[0]);
+    const t = pool.splice(k, 1)[0].t;
+    const lv = perks[t.id] || 0;
+    const canDouble = !t.once && t.id !== 'gamble' && t.max - lv >= 2;
+    out.push({
+      id: t.id, t,
+      double: stage >= 15 && canDouble && Math.random() < 0.4,
+      swap: !t.once && !lv && full,
+    });
   }
   return out;
 }
