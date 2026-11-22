@@ -6,6 +6,7 @@ import { loadCfg } from './config.js';
 import { initDevPanel } from './devpanel.js';
 import { COLORS, RAINBOW, SKINS, SKIN_CANVAS } from './textures.js';
 import { store, meta, ACHIEVEMENTS, CHALLENGES, chalState } from './meta.js';
+import { TAL, COMBO_TIERS } from './perks.js';
 
 const $ = (id) => document.getElementById(id);
 const CN = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十'];
@@ -146,7 +147,7 @@ const ui = {
   hud(show) {
     $('hud').classList.toggle('hidden', !show);
     $('ammo').classList.toggle('hidden', !show || !isTouch);
-    if (!show) { this.setEffects(0, 0); this.setFeverMode(false); this.setBoss(null); }
+    if (!show) { this.setEffects(0, 0); this.setFeverMode(false); this.setBoss(null); this.setCombo(0, -1); }
   },
   _fxKey: '',
   setEffects(slowT, reverseT) {
@@ -158,6 +159,50 @@ const ui = {
       (slowT > 0 ? chip('缓行', '#6fd3ff', slowT) : '') +
       (reverseT > 0 ? chip('倒流', '#c39bff', reverseT) : '');
   },
+  // 连击段位徽章：c<3 隐藏；broke 为 true 时播放"断"的动画
+  setCombo(c, tier, broke = false) {
+    const el = $('combo');
+    if (c < 3) {
+      if (broke && !el.classList.contains('hidden')) {
+        el.classList.remove('bump');
+        el.classList.add('break');
+        clearTimeout(this._comboT);
+        this._comboT = setTimeout(() => { el.classList.add('hidden'); el.classList.remove('break'); }, 600);
+      } else if (!broke) { el.classList.add('hidden'); el.classList.remove('break'); }
+      return;
+    }
+    clearTimeout(this._comboT);
+    const T = COMBO_TIERS[tier];
+    el.classList.remove('hidden', 'break', 'bump');
+    el.style.setProperty('--c', T.color);
+    el.dataset.tier = tier;
+    el.querySelector('.rk').textContent = T.name;
+    el.querySelector('.cn i').textContent = c;
+    el.querySelector('.mul').textContent = '×' + T.mul;
+    void el.offsetWidth;
+    el.classList.add('bump');
+  },
+
+  // 无尽模式：三选一灯符
+  showChoice(list, perks, stage) {
+    const cards = list.map((t, k) => {
+      const lv = t.once ? 0 : (perks[t.id] || 0) + 1;
+      return `<button class="talisman ${t.rare ? 'rare' : ''}" data-act="perk" data-perk="${t.id}" style="--i:${k}">
+        <span class="tl-ch">${t.ch}</span>
+        <span class="tl-name">${t.name}</span>
+        <span class="tl-lv">${t.once ? '一次性' : `第${'壹贰叁肆伍'[lv - 1]}层${t.max ? ` / ${'壹贰叁肆伍'[t.max - 1]}` : ''}`}</span>
+        <span class="tl-desc">${t.desc(lv || 1)}</span>
+        ${isTouch ? '' : `<kbd>${k + 1}</kbd>`}
+      </button>`;
+    }).join('');
+    this.show(`
+      <div class="choose">
+        <div class="ch-head"><span class="ch-stage">${stageLabel(stage)}</span><h2>择一道灵符</h2><p>灵符效果可以叠加，整局有效</p></div>
+        <div class="tl-row">${cards}</div>
+        ${perkStrip(perks)}
+      </div>`);
+  },
+
   hint(text, ms = 5000) {
     const h = $('hint');
     h.textContent = text;
@@ -189,6 +234,7 @@ const ui = {
       <h2 class="s-title">${lvName(i)}</h2>
       <div class="s-sub">暂歇片刻，灯火未熄</div>
       ${chal}
+      ${i < 0 ? perkList(game.perks) : ''}
       <div class="actions">
         <button class="btn-red" data-act="resume">继续</button>
         <div class="btn-row">
@@ -263,6 +309,7 @@ const ui = {
       <h2 class="s-title">坚持到${stageLabel(st.stage)}</h2>
       <div class="s-score" id="resScore">0</div>
       <div class="s-stats">坚持 <b>${fmtTime(st.time)}</b> · 最高连锁 <b>×${st.bestChain || 1}</b> · 最高分 <b>${Math.max(score, prev).toLocaleString()}</b></div>
+      ${perkList(st.perks)}
       ${coinLine(res)}
       <div class="actions">
         <button class="btn-red" data-act="retry">再战一夜</button>
@@ -414,6 +461,23 @@ const ui = {
 };
 
 const COIN = '<i class="coin"></i>';
+const CN_LV = '壹贰叁肆伍';
+
+// 已得灯符：选符界面底部的小印章条
+function perkStrip(perks) {
+  const ids = Object.keys(perks || {});
+  if (!ids.length) return '';
+  return `<div class="perk-strip">${ids.map((id) => `<span class="pk" title="${TAL[id].name}">${TAL[id].ch}<sub>${perks[id]}</sub></span>`).join('')}</div>`;
+}
+// 暂停 / 结算卷轴里的灯符清单
+function perkList(perks) {
+  const ids = Object.keys(perks || {});
+  if (!ids.length) return '';
+  return `<div class="perk-list"><div class="chal-t">本局灵符</div><ul>${ids.map((id) => {
+    const t = TAL[id], l = perks[id];
+    return `<li><b>${t.ch}</b><span>${t.name} · ${CN_LV[l - 1]}层</span><em>${t.desc(l)}</em></li>`;
+  }).join('')}</ul></div>`;
+}
 const fmtHours = (sec) => (sec < 3600 ? `${Math.floor(sec / 60)} 分` : `${(sec / 3600).toFixed(1)} 时`);
 const newAch = () => Math.max(0, meta.achCount() - (meta.P.seen || 0));
 const affordable = () => SKINS.some((s) => !s.ach && !meta.P.skins.includes(s.id) && meta.coins >= s.price);
@@ -504,6 +568,7 @@ function countUp(el, to, dur, delay) {
 
 const game = new Game(app, ui);
 game.setSkin(meta.skin().id, meta.skin().halo);
+meta.perksNow = () => game.perks;
 let current = 0;
 
 function play(i) {
@@ -538,6 +603,8 @@ $('screen').addEventListener('click', (e) => {
   else if (act === 'buy') {
     const got = meta.buy(b.dataset.skin);
     if (got) { applySkin(); sfx.rainbow(); ui.showShop(); got.forEach(toast); }
+  } else if (act === 'perk') {
+    game.pickPerk(b.dataset.perk);
   } else if (act === 'equip') {
     if (meta.equip(b.dataset.skin)) { applySkin(); sfx.powerAppear(); ui.showShop(); }
   }
@@ -560,6 +627,11 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) { game.pause(); sfx.suspend(); }
 });
 document.addEventListener('pointerdown', () => sfx.unlock(), { capture: true });
+window.addEventListener('keydown', (e) => {
+  if (game.state !== 'choose' || !game.choices) return;
+  const k = +e.key;
+  if (k >= 1 && k <= game.choices.length) { sfx.swap(); game.pickPerk(game.choices[k - 1].id); }
+});
 
 let resizeT = 0;
 window.addEventListener('resize', () => {

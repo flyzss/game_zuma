@@ -60,6 +60,7 @@ export const ACHIEVEMENTS = [
   A('combo20', '连珠妙手', '神射无双', '连击达到 20', 250, (c) => c.run.bestCombo >= 20),
   A('close', '连珠妙手', '化险为夷', '珠串逼近古井时打出消除', 40, (c) => c.run.closeCalls >= 1),
   A('close_win', '连珠妙手', '绝处逢生', '珠串曾到过井口边，却仍然过关', 80, (c) => won(c) && c.run.maxLead > 0.93),
+  A('tier_god', '连珠妙手', '天下无双', '连击达到「天下无双」段位', 300, (c) => c.run.maxTier >= 3),
   A('clean', '连珠妙手', '一扫而空', '把一条珠串打空', 30, (c) => c.run.clears >= 1),
   A('clean3', '连珠妙手', '片甲不留', '一局里打空珠串 3 次', 100, (c) => c.run.clears >= 3),
 
@@ -84,6 +85,9 @@ export const ACHIEVEMENTS = [
   A('endless_5', '无尽长夜', '长夜漫漫', '无尽模式坚持到第五重', 60, (c) => c.level < 0 && c.run.stage >= 5),
   A('endless_10', '无尽长夜', '彻夜不眠', '无尽模式坚持到第十重（奖励：夜明灯）', 150, (c) => c.level < 0 && c.run.stage >= 10),
   A('endless_15', '无尽长夜', '不夜之天', '无尽模式坚持到第十五重', 300, (c) => c.level < 0 && c.run.stage >= 15),
+  A('perk_first', '无尽长夜', '灵符初成', '在无尽模式里选下第一道灵符', 20, (c) => c.run.perks >= 1),
+  A('perk_8', '无尽长夜', '符箓满身', '一局无尽模式里选下 8 道灵符', 150, (c) => c.run.perks >= 8),
+  A('gamble_3', '无尽长夜', '孤注一掷', '把博险符叠满三层', 200, (c) => c.level < 0 && (c.perks?.gamble || 0) >= 3),
   A('endless_50k', '无尽长夜', '灯火通宵', '无尽模式单局 50,000 分', 200, (c) => c.level < 0 && c.score >= 50000),
 
   // —— 灯坊珍藏 ——
@@ -147,7 +151,7 @@ export const meta = {
   chalDone,
 
   ctx(level, run, end = null, score = 0) {
-    return { level, run, end, score, sum: (k) => (P.life[k] || 0) + (run[k] || 0) };
+    return { level, run, end, score, perks: this.perksNow?.(), sum: (k) => (P.life[k] || 0) + (run[k] || 0) };
   },
 
   // 检查未解锁的成就，返回新解锁列表（已发放灯币与外观）

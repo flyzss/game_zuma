@@ -4,6 +4,7 @@ import { COLORS, TEX, RAINBOW, POWERS } from './textures.js';
 import { FX } from './fx.js';
 import { sfx, music } from './audio.js';
 import { CFG } from './config.js';
+import { TAL, rollTalismans, prismEvery, COMBO_TIERS, comboTier } from './perks.js';
 
 // 固定参数（改了会影响关卡布局，不放进调参面板）
 // 触屏设备：珠子放大约 40%，同时按比例减少珠子数量，让珠串总长与关卡节奏保持不变
@@ -51,6 +52,7 @@ export function trackDefs(lv) {
 const newRun = () => ({
   shots: 0, misses: 0, swaps: 0, matches: 0, removed: 0, bestChain: 0, bestCombo: 0, bestBurst: 0,
   powers: {}, powerCount: 0, fevers: 0, clears: 0, closeCalls: 0, gemHits: 0, stage: 1, maxLead: 0,
+  maxTier: -1, perks: 0,
 });
 
 export class Game {
@@ -113,6 +115,82 @@ export class Game {
     window.addEventListener('resize', () => this.resize());
     window.addEventListener('orientationchange', () => setTimeout(() => this.resize(), 200));
     app.ticker.add(() => this.update(Math.min(app.ticker.deltaMS / 1000, 1 / 20)));
+  }
+
+  // 灯符层数（只有无尽模式会有）
+  perk(id) { return this.perks[id] || 0; }
+
+  // 选中一张灯符
+  pickPerk(id) {
+    if (this.state !== 'choose') return;
+    const t = TAL[id];
+    if (!t) return;
+    if (t.once) {
+      if (id === 'rewind') { this.reverseT = 4; this.slowT = 0; sfx.reverse(); }
+    } else {
+      this.perks[id] = (this.perks[id] || 0) + 1;
+      if (id === 'guard') this.guardLeft++;
+    }
+    this.perkLog.push(id);
+    this.run.perks = this.perkLog.length;
+    this.choices = null;
+    this.state = 'play';
+    this.ui.close();
+    this.fx.text(this.sx, this.sy - 120, `${t.name}${t.once ? '' : ' · ' + '壹贰叁肆伍'[this.perks[id] - 1]}`, { size: 46, fill: ['#fffbe6', '#ffd27a'], stroke: '#3a1606', dur: 1.4, rise: 50, font: 'brush' });
+    this.fx.ring(this.sx, this.sy, 0xffd27a, 3.4, 0.7);
+    this.fx.burst(this.sx, this.sy, 0xffe08a, 24, 1.6);
+    this.ui.flash('rgba(255,225,140,0.3)');
+    this.emit('perk', id);
+  }
+
+  openChoice() {
+    this.choices = rollTalismans(this.perks);
+    if (!this.choices.length) return;
+    this.state = 'choose';
+    sfx.powerAppear();
+    this.ui.showChoice(this.choices, this.perks, this.stage);
+  }
+
+  // 连击断了（失手）：护连符可抵挡
+  breakCombo() {
+    if (this.shotCombo <= 0) return;
+    if (this.guardLeft > 0 && this.shotCombo >= 3) {
+      this.guardLeft--;
+      this.fx.text(this.sx, this.sy - 100, '护连', { size: 40, fill: ['#e8fbff', '#7ad0ff'], stroke: '#04203a', dur: 0.9, rise: 40, font: 'brush' });
+      sfx.clack();
+      return;
+    }
+    const had = this.shotCombo;
+    this.shotCombo = 0;
+    this.comboTierNow = -1;
+    this.ui.setCombo?.(0, -1, had >= 3);
+  }
+
+  // 连击推进：跨过段位时大字 + 闪光
+  bumpCombo() {
+    this.shotCombo++;
+    const c = this.shotCombo;
+    const t = comboTier(c);
+    this.ui.setCombo?.(c, t);
+    if (t > this.comboTierNow) {
+      this.comboTierNow = t;
+      this.run.maxTier = Math.max(this.run.maxTier, t);
+      const T = COMBO_TIERS[t];
+      const top = t === COMBO_TIERS.length - 1;
+      this.fx.text(500, 400, T.name, { size: top ? 120 : 130 + t * 10, fill: ['#fffbe6', T.color], stroke: '#2a0a04', dur: 1.3, rise: 30, font: 'brush' });
+      this.fx.text(500, 490, `连击 ×${T.mul} 倍`, { size: 40, fill: ['#fffbe6', T.color], stroke: '#2a0a04', dur: 1.3, rise: 20, font: 'brush' });
+      this.fx.ring(this.sx, this.sy, Number('0x' + T.color.slice(1)), 3 + t, 0.6);
+      this.ui.flash(top ? 'rgba(255,90,120,0.4)' : 'rgba(255,215,140,0.25)');
+      this.shake(6 + t * 3);
+      this.punch(0.02 + t * 0.01);
+      if (top) sfx.rainbow(); else sfx.star(t);
+      this.emit('tier', t);
+    }
+  }
+
+  comboMul() {
+    const t = comboTier(this.shotCombo);
+    return t < 0 ? 1 : COMBO_TIERS[t].mul;
   }
 
   // 向局外系统（成就 / 挑战）报告事件
@@ -319,6 +397,14 @@ export class Game {
     this.run = newRun();
     this.closeT = 0;
     this.shotCombo = 0;
+    this.comboTierNow = -1;
+    this.perks = {};
+    this.perkLog = [];
+    this.guardLeft = 0;
+    this.prismN = 0;
+    this.chooseT = 0;
+    this.choices = null;
+    this.ui.setCombo?.(0, -1);
     this.bestChain = 0;
     this.removedCount = 0;
     this.insertedCount = 0;
@@ -597,7 +683,7 @@ export class Game {
     const v = this.makeBallView(this.cur, true);
     const p = {
       color: this.cur, x: this.sx + dx * MUZZLE, y: this.sy + dy * MUZZLE,
-      vx: dx * CFG.shotSpeed, vy: dy * CFG.shotSpeed, view: v.view, body: v.body,
+      vx: dx * CFG.shotSpeed * (1 + 0.25 * this.perk('swift')), vy: dy * CFG.shotSpeed * (1 + 0.25 * this.perk('swift')), view: v.view, body: v.body,
       fire: this.feverT > 0,   // 灯火燎原：火珠，打到哪炸到哪
     };
     if (p.fire) {
@@ -615,8 +701,9 @@ export class Game {
     this.fx.burst(p.x + dx * 10, p.y + dy * 10, tint, 4, 0.45, true);
     this.cur = this.next;
     this.next = this.pickColor();
+    if (this.perk('prism') && ++this.prismN >= prismEvery(this.perk('prism'))) { this.prismN = 0; this.next = RAINBOW; }
     this.updateAmmoView();
-    this.cooldown = CFG.fireCooldown * (this.feverT > 0 ? 0.8 : 1);
+    this.cooldown = CFG.fireCooldown * (this.feverT > 0 ? 0.8 : 1) * (1 - 0.2 * this.perk('swift'));
     this.shooter.recoil = 1;
     this.shooter.transferT = 1;
     sfx.shoot();
@@ -637,7 +724,11 @@ export class Game {
   update(dt) {
     this.t += dt;
     this.updateFireflies(dt);
-    if (this.state === 'paused' || !this.tracks) { sfx.roll(0); return; }
+    if (this.state === 'paused' || this.state === 'choose' || !this.tracks) { sfx.roll(0); return; }
+    if (this.chooseT > 0 && this.state === 'play') {
+      this.chooseT -= dt;
+      if (this.chooseT <= 0) { this.openChoice(); return; }
+    }
     let gdt = dt;
     if (this.hitStop > 0) { this.hitStop -= dt; gdt = dt * 0.1; }
     if (this.state === 'play') {
@@ -652,7 +743,7 @@ export class Game {
         this.feverT -= gdt;
         if (this.feverT <= 0) this.endFever();
       }
-      this.ui.setFever(this.feverT > 0 ? Math.max(0, this.feverShots) / CFG.feverShots : this.fever, this.feverT > 0);
+      this.ui.setFever(this.feverT > 0 ? Math.max(0, this.feverShots) / (CFG.feverShots + 2 * this.perk('ember')) : this.fever, this.feverT > 0);
     }
     if (this.state === 'play' || this.state === 'lose' || this.state === 'win') {
       this.updatePowers(gdt);
@@ -696,6 +787,8 @@ export class Game {
     this.stage = n;
     this.run.stage = n;
     this.emit('stage', n);
+    this.guardLeft = this.perk('guard');
+    this.chooseT = 1.7;   // 升重大字放完再选灯符
     const hadSurge = !!this.lv.surge;
     Object.assign(this.lv, endlessStage(n));
     if (this.lv.surge && !hadSurge) { this.waveCd = this.lv.surge.every; this.waveWarned = false; }
@@ -774,7 +867,7 @@ export class Game {
     if (this.state === 'lose') return 1100;
     if (this.boss?.dying) return 0;
     const lead = this.lead(tr);
-    const base = this.lv.speed * CFG.speedMul;
+    const base = this.lv.speed * CFG.speedMul * (1 - 0.1 * this.perk('calm')) * (1 + 0.15 * this.perk('gamble'));
     if (tr.rush) {
       if (lead >= tr.rushTo) tr.rush = false;
       else return Math.max(base, CFG.rushSpeed * (1 - (lead / tr.rushTo) ** 3));
@@ -782,7 +875,7 @@ export class Game {
     // 关内加速：越往后珠串推得越快
     let v = base * (1 + this.lv.ramp * Math.min(1, this.levelTime / RAMP_TIME));
     if (this.boss?.enraged) v *= 1.15;
-    if (this.waveT > 0) v *= this.lv.surge.mul * Math.min(1, this.waveT / 0.3);   // 潮涌
+    if (this.waveT > 0) v *= (1 + (this.lv.surge.mul - 1) * (1 - 0.35 * this.perk('tide'))) * Math.min(1, this.waveT / 0.3);   // 潮涌
     if (this.surgeT > 0) v *= 2.8;          // 年兽怒吼：珠串猛冲
     if (lead > 0.8) v *= CFG.dangerSlow;    // 临近终点稍微放慢，给翻盘机会
     // 补珠：最后一段（被推动的那段）还在起点附近时快速冲入，清空后不用干等
@@ -808,7 +901,7 @@ export class Game {
     }
     this.powerT -= dt;
     if (this.powerT <= 0) {
-      this.powerT = CFG.powerEvery * (0.75 + Math.random() * 0.5);
+      this.powerT = CFG.powerEvery * (0.75 + Math.random() * 0.5) * (1 - 0.25 * this.perk('treasure'));
       if (active < CFG.powerMax) {
         const cand = [];
         for (const b of this.allBalls()) {
@@ -903,7 +996,7 @@ export class Game {
     for (const [b, level, fromShot] of checks) {
       const ok = this.checkMatch(b, level, fromShot);
       if (!ok) {
-        if (fromShot) this.shotCombo = 0;
+        if (fromShot) this.breakCombo();
         else b.chainLevel = 0;
       }
     }
@@ -936,7 +1029,7 @@ export class Game {
     const fever = this.feverT > 0;
     const mult = fever ? 2 : 1;
 
-    if (fromShot) this.shotCombo++;
+    if (fromShot) this.bumpCombo();
     this.bestChain = Math.max(this.bestChain, level);
     const run = this.run;
     run.matches++;
@@ -945,8 +1038,9 @@ export class Game {
     // 化险为夷：珠串已逼近古井时打出消除
     const close = this.state === 'play' && this.lead(ball.tr) > 0.86;
     if (close) run.closeCalls++;
-    let pts = (n * 10 * level + (level > 1 ? 40 * level : 0)) * mult;
+    let pts = (n * 10 * level + (level > 1 ? 40 * level * (1 + 0.5 * this.perk('chain')) : 0)) * mult;
     if (fromShot && this.shotCombo >= 3) pts += this.shotCombo * 15 * mult;
+    pts = Math.round(pts * this.comboMul());
     this.addScore(pts);
     this.shooter.joy = 1;
 
@@ -956,7 +1050,7 @@ export class Game {
     this.punch(0.012 + Math.min(n - 3, 6) * 0.004 + (level - 1) * 0.008);
     this.setHitStop(0.035 + Math.min(n - 3, 5) * 0.01);
     // 一次消得多：给一句夸赞
-    const big = n >= 10 ? ['酣畅淋漓', '#ff6a3c'] : n >= 7 ? ['绝妙', '#ffb02e'] : n >= 5 ? ['妙', '#ffd27a'] : null;
+    const big = n >= 10 ? ['酣畅淋漓', '#ff6a3c'] : n >= 7 ? ['痛快', '#ffb02e'] : n >= 5 ? ['漂亮', '#ffd27a'] : null;
     if (big && level < 2) {
       this.fx.text(cx, cy - 56, big[0], { size: 54 + n * 3, fill: ['#fffbe6', big[1]], dur: 1.2, rise: 80, font: 'brush' });
       if (n >= 7) this.ui.flash('rgba(255,220,150,0.22)');
@@ -969,7 +1063,7 @@ export class Game {
       this.shake(6 + level * 3);
       if (level >= 3) this.ui.flash('rgba(255,220,150,0.35)');
     } else if (fromShot && this.shotCombo >= 3) {
-      this.fx.text(cx, cy - 46, `连击 ${this.shotCombo}`, { size: 40, fill: ['#e0fbff', '#5fd0ff'], stroke: '#06223a', font: 'brush' });
+      this.fx.text(cx, cy - 46, `连击 ${this.shotCombo}`, { size: 40 + Math.min(this.shotCombo, 20), fill: ['#fffbe6', COMBO_TIERS[Math.max(0, comboTier(this.shotCombo))].color], stroke: '#2a0a04', font: 'brush' });
       this.shake(4);
     } else {
       this.shake(3);
@@ -1070,6 +1164,7 @@ export class Game {
   }
 
   addScore(pts) {
+    if (this.endless) pts = Math.round(pts * (1 + 0.25 * this.perk('toad')) * 1.5 ** this.perk('gamble'));
     this.score += pts;
     this.ui.setScore(this.score);
   }
@@ -1086,14 +1181,14 @@ export class Game {
   // ================= 灯火燎原（Fever） =================
   addFever(amount) {
     if (this.feverT > 0 || CFG.feverNeed <= 0) return;
-    this.fever += amount / CFG.feverNeed;
+    this.fever += (amount * (1 + 0.3 * this.perk('blaze'))) / CFG.feverNeed;
     if (this.fever >= 1) this.startFever();
   }
 
   startFever() {
     this.fever = 0;
     this.feverT = CFG.feverTime;
-    this.feverShots = CFG.feverShots;
+    this.feverShots = CFG.feverShots + 2 * this.perk('ember');
     this.run.fevers++;
     this.emit('fever');
     this.fx.text(500, 430, '灯火燎原', { size: 110, fill: ['#fffbe6', '#ffb02e', '#ff4d2e'], stroke: '#3a0a02', dur: 1.8, rise: 30, font: 'brush' });
@@ -1103,7 +1198,7 @@ export class Game {
     this.setHitStop(0.12);
     this.ui.flash('rgba(255,170,60,0.55)');
     this.ui.setFeverMode(true);
-    this.fx.text(500, 540, `火珠 ×${CFG.feverShots} · 打哪炸哪`, { size: 44, fill: ['#fffbe6', '#ffb02e'], stroke: '#3a0a02', dur: 2, rise: 20, font: 'brush' });
+    this.fx.text(500, 540, `火珠 ×${this.feverShots} · 打哪炸哪`, { size: 44, fill: ['#fffbe6', '#ffb02e'], stroke: '#3a0a02', dur: 2, rise: 20, font: 'brush' });
     sfx.fever();
   }
 
@@ -1113,11 +1208,12 @@ export class Game {
   }
 
   feverBlast(x, y, level) {
-    const hit = this.ballsNear(x, y, CFG.feverBlast);
+    const blastR = CFG.feverBlast * (1 + 0.2 * this.perk('thunder'));
+    const hit = this.ballsNear(x, y, blastR);
     this.fx.burst(x, y, 0xff8a2e, 30, 1.8);
     this.fx.burst(x, y, 0xffe08a, 14, 1.1, true);
-    this.fx.ring(x, y, 0xffb347, CFG.feverBlast / 80, 0.45);
-    this.fx.ring(x, y, 0xffffff, CFG.feverBlast / 130, 0.25);
+    this.fx.ring(x, y, 0xffb347, blastR / 80, 0.45);
+    this.fx.ring(x, y, 0xffffff, blastR / 130, 0.25);
     this.shake(9);
     this.punch(0.025);
     this.setHitStop(0.04);
@@ -1362,7 +1458,7 @@ export class Game {
       this.shake(9);
       this.setHitStop(0.07);
       this.shooter.joy = 1;
-      this.shotCombo++;
+      this.bumpCombo();
       this.run.gemHits++;
       this.run.bestCombo = Math.max(this.run.bestCombo, this.shotCombo);
       this.emit('gem');
@@ -1373,7 +1469,7 @@ export class Game {
     } else {
       this.fx.burst(p.x, p.y, 0x6a40a8, 10, 0.7);
       this.fx.text(p.x, p.y - 30, '无效', { size: 30, fill: ['#d8d4ee', '#8a86a8'], stroke: '#14082a', font: 'brush', dur: 0.8, rise: 40 });
-      this.shotCombo = 0;
+      this.breakCombo();
       sfx.clack();
     }
   }
@@ -1484,9 +1580,10 @@ export class Game {
     this.emit('power', p.type);
     switch (p.type) {
       case 'bomb': {
-        const hit = this.ballsNear(p.x, p.y, CFG.bombRadius);
+        const bombR = CFG.bombRadius * (1 + 0.4 * this.perk('thunder'));
+        const hit = this.ballsNear(p.x, p.y, bombR);
         this.fx.burst(p.x, p.y, def.tint, 40, 2);
-        this.fx.ring(p.x, p.y, 0xffd27a, CFG.bombRadius / 90, 0.5);
+        this.fx.ring(p.x, p.y, 0xffd27a, bombR / 90, 0.5);
         this.shake(16);
         this.setHitStop(0.1);
         this.ui.flash('rgba(255,140,60,0.35)');
@@ -1506,12 +1603,12 @@ export class Game {
         break;
       }
       case 'slow':
-        this.slowT = CFG.slowTime;
+        this.slowT = CFG.slowTime * (1 + 0.5 * this.perk('long'));
         this.reverseT = 0;
         sfx.slow();
         break;
       case 'reverse':
-        this.reverseT = CFG.reverseTime;
+        this.reverseT = CFG.reverseTime * (1 + 0.5 * this.perk('long'));
         sfx.reverse();
         break;
       case 'rainbow':
@@ -1554,7 +1651,7 @@ export class Game {
       } else if (p.x < -lim || p.x > WORLD + lim || p.y < -lim || p.y > WORLD + lim) {
         p.view.destroy({ children: true });
         P.splice(i, 1);
-        this.shotCombo = 0;
+        this.breakCombo();
         if (this.state === 'play') { this.run.misses++; this.emit('miss'); }
       }
     }
@@ -1826,7 +1923,7 @@ export class Game {
       if (T.every((tr) => tr.balls.length === 0) || this.endTimer > 4) {
         this.state = 'over';
         this.ui.onLose(this.levelIndex, this.score, {
-          time: Math.round(this.levelTime), stage: this.stage, bestChain: this.bestChain,
+          time: Math.round(this.levelTime), stage: this.stage, bestChain: this.bestChain, perks: { ...this.perks },
         });
       }
     } else if (this.state === 'win') {
