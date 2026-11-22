@@ -142,7 +142,11 @@ npm run fonts
 - 原生 ES Modules，无打包工具、无框架
 - 贴图在运行时用 Canvas 2D 绘制，音效用 WebAudio 实时合成，仓库里没有图片或音频素材
 
-## 第三方许可
+## 许可
+
+本项目源码以 [MIT License](LICENSE) 开源。
+
+### 第三方许可
 
 | 组件 | 许可 |
 |---|---|
