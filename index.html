@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <script>
+    // 通过 /zuma 这种不带结尾斜杠的地址访问时，相对路径会解析到网站根目录导致资源 404，这里自动补上斜杠
+    (function () {
+      var p = location.pathname;
+      if (!/\/$/.test(p) && !/\.[a-z0-9]+$/i.test(p)) location.replace(p + '/' + location.search + location.hash);
+    })();
+  </script>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#070818">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>萤灯连珠</title>
+  <link rel="preload" href="fonts/MaShanZheng-subset.woff" as="font" type="font/woff" crossorigin>
+  <link rel="preload" href="fonts/ZCOOLXiaoWei-subset.woff" as="font" type="font/woff" crossorigin>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="stage"></div>
+  <div id="vignette"></div>
+  <div id="feverGlow"></div>
+  <div id="flash"></div>
+
+  <header id="hud" class="hidden">
+    <button id="btnPause" class="orb-btn" aria-label="暂停">
+      <svg viewBox="0 0 24 24"><rect x="7" y="5" width="3.6" height="14" rx="1.4"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.4"/></svg>
+    </button>
+
+    <div class="plaque">
+      <div class="plaque-name"><span id="lvNo">第一关</span><b id="lvName">萤火初现</b></div>
+      <div class="rope" aria-hidden="true"><i id="bar"></i><em id="bead"></em></div>
+    </div>
+
+    <div class="scorebox">
+      <div id="score">0</div>
+      <div class="fever" id="feverBox">
+        <span>燎原</span>
+        <div class="fbar"><i id="feverBar"></i></div>
+      </div>
+    </div>
+
+    <button id="btnMute" class="orb-btn" aria-label="静音">
+      <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path class="wave" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </header>
+
+  <button id="ammo" class="hidden" aria-label="交换珠子">
+    <span class="a-cur" id="ammoCur"></span>
+    <svg class="a-swap" viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="a-next" id="ammoNext"></span>
+    <em>交换</em>
+  </button>
+
+  <div id="bossBar" class="hidden">
+    <span id="bossName">年兽</span>
+    <div class="bhp"><b id="bossLag"></b><i id="bossHp"></i><em></em></div>
+  </div>
+  <div id="effects"></div>
+  <div id="hint"></div>
+  <div id="overlay"><div id="screen"></div></div>
+
+  <script src="lib/pixi.min.js"></script>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

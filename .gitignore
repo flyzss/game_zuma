@@ -1,0 +1,9 @@
+# 打包产物（npm run build 生成）
+dist/
+
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+.claude/settings.local.json

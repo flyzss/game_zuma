@@ -1,0 +1,13 @@
+{
+  "name": "lantern-orbs",
+  "private": true,
+  "type": "module",
+  "description": "萤灯连珠：轨道珠链三消游戏（PixiJS，纯静态，无构建依赖）",
+  "scripts": {
+    "build": "python tools/build.py",
+    "build:quick": "python tools/build.py --no-fonts",
+    "fonts": "python tools/subset-fonts.py",
+    "check": "node tools/check-levels.mjs",
+    "dev": "python -m http.server 5173 --bind 127.0.0.1"
+  }
+}
