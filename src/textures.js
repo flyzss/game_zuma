@@ -249,39 +249,144 @@ function ringTex() {
 }
 
 // 主角：提灯小精灵（灯笼本体，眼睛在游戏里单独绘制以便跟随瞄准）
-function lanternTex() {
+// 灯灵外观：price 为灯坊售价，ach 为解锁它的成就（成就外观不能购买）
+export const SKINS = [
+  { id: 'orange', name: '橘灯', desc: '灯会上最常见的一盏，暖暖的', price: 0, halo: 0xffa53d,
+    body: ['#fff7da', '#ffc062', '#e2552a'], cap: '#b4232f', trim: '#ffcf5a', rib: 'rgba(150,50,20,0.28)' },
+  { id: 'rabbit', name: '玉兔灯', desc: '竖着一对长耳朵，蹦蹦跳跳', price: 300, halo: 0xffc4d8,
+    body: ['#ffffff', '#ffe6ee', '#f2a5bd'], cap: '#e0607e', trim: '#fff2c4', rib: 'rgba(200,90,120,0.2)', deco: 'ears' },
+  { id: 'lotus', name: '青莲灯', desc: '莲瓣层层托起，出水不染', price: 500, halo: 0x6ff0d0,
+    body: ['#f4fff9', '#8ff0cf', '#1d9c86'], cap: '#0f5e55', trim: '#ffe7a8', rib: 'rgba(10,90,80,0.25)', deco: 'petals' },
+  { id: 'koi', name: '锦鲤灯', desc: '摆着鳍尾，鱼跃龙门', price: 700, halo: 0xff7a4a,
+    body: ['#fffbe8', '#ffad5c', '#e8341f'], cap: '#8a1410', trim: '#ffd86a', rib: 'rgba(130,20,10,0.25)', deco: 'fins' },
+  { id: 'palace', name: '紫宸宫灯', desc: '六角宫灯，金框紫纱，贵气逼人', price: 1000, halo: 0xc77dff,
+    body: ['#fbeaff', '#c58bff', '#5a1fa8'], cap: '#2e0c52', trim: '#ffd86a', rib: 'rgba(60,10,110,0.3)', deco: 'palace' },
+  { id: 'dragon', name: '金龙灯', desc: '击退年兽的勇者才能点亮', ach: 'boss_win', halo: 0xffd84a,
+    body: ['#fffbe0', '#ffd84a', '#c87410'], cap: '#a8161c', trim: '#fff0a8', rib: 'rgba(140,70,0,0.3)', deco: 'horns' },
+  { id: 'night', name: '夜明灯', desc: '在长夜里坚持到第十重才能点亮', ach: 'endless_10', halo: 0x7ab8ff,
+    body: ['#eef6ff', '#6aa8ff', '#16246e'], cap: '#0b1238', trim: '#d8e8ff', rib: 'rgba(10,20,80,0.3)', deco: 'stars' },
+];
+export const SKIN_CANVAS = {};
+
+function lanternTex(sk = SKINS[0]) {
   const W = 200, H = 220, cx = 100, cy = 100;
   const [c, g] = canvas(W, H);
   const rr = (x, y, w, h, r) => { g.beginPath(); g.roundRect(x, y, w, h, r); g.fill(); };
+  const ell = (x, y, rx, ry, rot = 0) => { g.beginPath(); g.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2); g.fill(); };
+  const deco = sk.deco;
+  // —— 画在灯身后面的装饰 ——
+  if (deco === 'ears') {
+    for (const s of [-1, 1]) {
+      g.fillStyle = '#ffffff'; ell(cx + s * 24, cy - 62, 13, 34, s * 0.22);
+      g.fillStyle = '#ffb3c8'; ell(cx + s * 24, cy - 60, 6, 24, s * 0.22);
+    }
+  } else if (deco === 'petals') {
+    // 莲座：花瓣沿灯身下沿一圈，瓣尖朝外上方
+    for (let k = 0; k < 9; k++) {
+      const a = Math.PI * (k / 8);
+      const px = cx + Math.cos(a) * 58, py = cy + 30 + Math.sin(a) * 18;
+      g.fillStyle = k % 2 ? '#ff9cc4' : '#ffc4dc';
+      g.save(); g.translate(px, py); g.rotate(Math.cos(a) * 1.15);
+      g.beginPath(); g.moveTo(0, -30); g.quadraticCurveTo(16, 0, 0, 22); g.quadraticCurveTo(-16, 0, 0, -30); g.fill();
+      g.restore();
+    }
+  } else if (deco === 'fins') {
+    for (const s of [-1, 1]) {
+      g.fillStyle = '#ff6a3c';
+      g.beginPath(); g.moveTo(cx + s * 56, cy - 14); g.quadraticCurveTo(cx + s * 98, cy - 30, cx + s * 92, cy + 10); g.quadraticCurveTo(cx + s * 80, cy + 4, cx + s * 58, cy + 18); g.fill();
+      g.strokeStyle = 'rgba(255,230,160,0.7)'; g.lineWidth = 2;
+      for (const t of [0.35, 0.65]) { g.beginPath(); g.moveTo(cx + s * 60, cy); g.lineTo(cx + s * (64 + 34 * t), cy - 22 + t * 26); g.stroke(); }
+    }
+  } else if (deco === 'horns') {
+    for (const s of [-1, 1]) {
+      g.strokeStyle = '#ffe06a'; g.lineWidth = 7; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(cx + s * 22, cy - 58); g.quadraticCurveTo(cx + s * 30, cy - 86, cx + s * 52, cy - 92); g.stroke();
+      g.lineWidth = 4;
+      g.beginPath(); g.moveTo(cx + s * 30, cy - 76); g.lineTo(cx + s * 44, cy - 74); g.stroke();
+      // 龙须
+      g.strokeStyle = 'rgba(255,240,170,0.85)'; g.lineWidth = 2.5;
+      g.beginPath(); g.moveTo(cx + s * 40, cy + 18); g.bezierCurveTo(cx + s * 80, cy + 10, cx + s * 70, cy + 50, cx + s * 96, cy + 44); g.stroke();
+    }
+  }
   // 挂钩
-  g.strokeStyle = '#ffcf5a'; g.lineWidth = 4;
+  g.strokeStyle = sk.trim; g.lineWidth = 4;
   g.beginPath(); g.arc(cx, cy - 70, 9, Math.PI, 0); g.stroke();
   // 灯身
   const gr = g.createRadialGradient(cx - 14, cy - 16, 6, cx, cy, 66);
-  gr.addColorStop(0, '#fff7da');
-  gr.addColorStop(0.45, '#ffc062');
-  gr.addColorStop(1, '#e2552a');
+  gr.addColorStop(0, sk.body[0]);
+  gr.addColorStop(0.45, sk.body[1]);
+  gr.addColorStop(1, sk.body[2]);
   g.fillStyle = gr;
-  g.beginPath(); g.ellipse(cx, cy, 64, 54, 0, 0, Math.PI * 2); g.fill();
-  // 竹骨
-  g.strokeStyle = 'rgba(150,50,20,0.28)'; g.lineWidth = 3;
-  for (const rx of [22, 44]) { g.beginPath(); g.ellipse(cx, cy, rx, 54, 0, 0, Math.PI * 2); g.stroke(); }
+  if (deco === 'palace') {
+    // 六角宫灯：上下收窄的六边形
+    g.beginPath();
+    g.moveTo(cx - 40, cy - 52); g.lineTo(cx + 40, cy - 52); g.lineTo(cx + 64, cy);
+    g.lineTo(cx + 40, cy + 52); g.lineTo(cx - 40, cy + 52); g.lineTo(cx - 64, cy); g.closePath(); g.fill();
+    g.strokeStyle = sk.trim; g.lineWidth = 3; g.stroke();
+    g.beginPath(); g.moveTo(cx - 22, cy - 52); g.lineTo(cx - 30, cy); g.lineTo(cx - 22, cy + 52);
+    g.moveTo(cx + 22, cy - 52); g.lineTo(cx + 30, cy); g.lineTo(cx + 22, cy + 52); g.stroke();
+  } else {
+    ell(cx, cy, 64, 54);
+    // 竹骨
+    g.strokeStyle = sk.rib; g.lineWidth = 3;
+    for (const rx of [22, 44]) { g.beginPath(); g.ellipse(cx, cy, rx, 54, 0, 0, Math.PI * 2); g.stroke(); }
+  }
+  // —— 画在灯身上的装饰 ——
+  if (deco === 'fins') {
+    g.strokeStyle = 'rgba(255,240,200,0.55)'; g.lineWidth = 2;
+    for (let row = 0; row < 3; row++) {
+      for (let k = -2; k <= 2; k++) {
+        const x = cx + k * 18 + (row % 2) * 9, y = cy + 26 + row * 9;
+        if (Math.abs(x - cx) > 46 - row * 6) continue;
+        g.beginPath(); g.arc(x, y, 8, 0.1 * Math.PI, 0.9 * Math.PI); g.stroke();
+      }
+    }
+  } else if (deco === 'stars') {
+    g.fillStyle = '#ffffff';
+    for (const [x, y, r] of [[-38, -22, 2.5], [30, -30, 2], [44, 8, 2.6], [-46, 18, 2], [-14, 34, 1.8], [18, 38, 2.2], [4, -40, 1.6]]) {
+      ell(cx + x, cy + y, r, r);
+    }
+  } else if (deco === 'horns') {
+    g.fillStyle = 'rgba(200,110,0,0.35)';
+    for (let k = -2; k <= 2; k++) ell(cx + k * 20, cy + 32, 7, 4);
+  }
   // 上下盖
-  g.fillStyle = '#b4232f';
+  g.fillStyle = sk.cap;
   rr(cx - 32, cy - 64, 64, 16, 6);
   rr(cx - 32, cy + 48, 64, 16, 6);
-  g.fillStyle = '#ffcf5a';
+  g.fillStyle = sk.trim;
   rr(cx - 32, cy - 52, 64, 3, 1);
   rr(cx - 32, cy + 48, 64, 3, 1);
   // 腮红 + 嘴
   g.fillStyle = 'rgba(255,95,120,0.45)';
-  g.beginPath(); g.ellipse(cx - 34, cy + 12, 10, 6, 0, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.ellipse(cx + 34, cy + 12, 10, 6, 0, 0, Math.PI * 2); g.fill();
+  ell(cx - 34, cy + 12, 10, 6);
+  ell(cx + 34, cy + 12, 10, 6);
   g.strokeStyle = '#6b2412'; g.lineWidth = 3; g.lineCap = 'round';
   g.beginPath(); g.arc(cx, cy + 10, 7, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
   // 流苏
-  g.strokeStyle = '#ffcf5a'; g.lineWidth = 3;
-  for (const dx of [-5, 0, 5]) { g.beginPath(); g.moveTo(cx + dx, cy + 92); g.lineTo(cx + dx * 1.6, cy + 116); g.stroke(); }
+  if (deco === 'palace') {
+    g.strokeStyle = '#e83a4a';
+    for (const s of [-1, 1]) {
+      for (const dx of [-3, 0, 3]) { g.beginPath(); g.moveTo(cx + s * 62 + dx, cy + 4); g.lineTo(cx + s * 64 + dx * 1.5, cy + 44); g.stroke(); }
+    }
+  }
+  if (deco === 'fins') {
+    // 鱼尾代替流苏
+    g.fillStyle = '#ff6a3c';
+    g.beginPath(); g.moveTo(cx, cy + 66); g.quadraticCurveTo(cx - 34, cy + 80, cx - 30, cy + 104); g.quadraticCurveTo(cx - 8, cy + 88, cx, cy + 82);
+    g.quadraticCurveTo(cx + 8, cy + 88, cx + 30, cy + 104); g.quadraticCurveTo(cx + 34, cy + 80, cx, cy + 66); g.fill();
+  } else {
+    g.strokeStyle = sk.trim; g.lineWidth = 3;
+    for (const dx of [-5, 0, 5]) { g.beginPath(); g.moveTo(cx + dx, cy + 92); g.lineTo(cx + dx * 1.6, cy + 116); g.stroke(); }
+  }
+  // 灯坊预览图：游戏里眼睛是实时画的，预览单独补一双笑眼
+  const [pc, pg] = canvas(W, H);
+  pg.drawImage(c, 0, 0);
+  pg.strokeStyle = '#3a1608'; pg.lineWidth = 4; pg.lineCap = 'round';
+  for (const s of [-1, 1]) {
+    pg.beginPath(); pg.moveTo(cx + s * 21 - 8, cy - 2); pg.quadraticCurveTo(cx + s * 21, cy - 12, cx + s * 21 + 8, cy - 2); pg.stroke();
+  }
+  SKIN_CANVAS[sk.id] = pc;
   return PIXI.Texture.from(c);
 }
 
@@ -483,7 +588,9 @@ export function buildTextures() {
   TEX.glow = glowTex();
   TEX.spark = sparkTex();
   TEX.ring = ringTex();
-  TEX.lantern = lanternTex();
+  TEX.skins = {};
+  for (const sk of SKINS) TEX.skins[sk.id] = lanternTex(sk);
+  TEX.lantern = TEX.skins.orange;
   TEX.bg = bgTex();
   TEX.boss = bossTex();
   TEX.ink = inkTex();

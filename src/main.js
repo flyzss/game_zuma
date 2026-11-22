@@ -4,7 +4,8 @@ import { LEVELS, ENDLESS } from './levels.js';
 import { sfx } from './audio.js';
 import { loadCfg } from './config.js';
 import { initDevPanel } from './devpanel.js';
-import { COLORS, RAINBOW } from './textures.js';
+import { COLORS, RAINBOW, SKINS, SKIN_CANVAS } from './textures.js';
+import { store, meta, ACHIEVEMENTS, CHALLENGES, chalState } from './meta.js';
 
 const $ = (id) => document.getElementById(id);
 const CN = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十'];
@@ -13,14 +14,6 @@ const lvName = (i) => (i < 0 ? ENDLESS.name : LEVELS[i].name);
 const stageLabel = (n) => `第${CN[n - 1] || n}重`;
 const fmtTime = (t) => `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
 
-const store = {
-  get(k, d) {
-    try { const v = localStorage.getItem('lanternOrbs.' + k); return v == null ? d : JSON.parse(v); } catch { return d; }
-  },
-  set(k, v) {
-    try { localStorage.setItem('lanternOrbs.' + k, JSON.stringify(v)); } catch { /* 隐私模式等情况忽略 */ }
-  },
-};
 
 loadCfg();
 
@@ -187,10 +180,15 @@ const ui = {
 
   showPause() {
     const i = game.levelIndex;
+    const st = i >= 0 ? chalState(i) : null;
+    const chal = i >= 0 ? chalList(CHALLENGES[i].map((ch, k) => ({
+      text: ch.text, done: st[k], prog: ch.prog?.(game.run),
+    })), '本关挑战') : '';
     this.show(this.scroll(`
       <div class="s-level">${lvLabel(i)}</div>
       <h2 class="s-title">${lvName(i)}</h2>
       <div class="s-sub">暂歇片刻，灯火未熄</div>
+      ${chal}
       <div class="actions">
         <button class="btn-red" data-act="resume">继续</button>
         <div class="btn-row">
@@ -208,6 +206,7 @@ const ui = {
     store.set('unlocked', Math.max(store.get('unlocked', 0), Math.min(i + 1, LEVELS.length - 1)));
     const last = i === LEVELS.length - 1;
     const isNew = score > prevBest && prevBest > 0;
+    const res = meta.finish(i, game.run, { won: true, score, stars, time: Math.round(game.levelTime) });
     this.show(this.scroll(`
       <div class="stamp">${last ? '圆满' : '过关'}</div>
       <div class="s-level">${lvLabel(i)}</div>
@@ -215,6 +214,8 @@ const ui = {
       <div class="stars-row">${STAR}${STAR}${STAR}</div>
       <div class="s-score" id="resScore">0</div>
       <div class="s-stats">${stats.time != null ? `用时 <b>${stats.time} 秒</b> · ` : ''}最高连锁 <b>×${stats.bestChain || 1}</b> · 最高分 <b>${best.toLocaleString()}</b>${isNew ? ' · <b>新纪录</b>' : ''}</div>
+      ${chalList(res.chal, '本关挑战', 1500)}
+      ${coinLine(res)}
       <div class="actions">
         ${last ? '' : '<button class="btn-red" data-act="next">下一关</button>'}
         <div class="btn-row">
@@ -227,21 +228,25 @@ const ui = {
       setTimeout(() => { svgs[k]?.classList.add('on'); sfx.star(k); }, 650 + k * 300);
     }
     countUp($('resScore'), score, 900, 500);
+    afterResult(res);
   },
 
   onLose(i, score, stats) {
     if (i < 0) { this.onEndless(score, stats); return; }
+    const res = meta.finish(i, game.run, { won: false, score, stars: 0, time: Math.round(game.levelTime) });
     this.show(this.scroll(`
       <div class="stamp grey">熄</div>
       <div class="s-level">${lvLabel(i)}</div>
       <h2 class="s-title">灯火熄灭</h2>
       <div class="s-sub">珠串落入了古井</div>
       <div class="s-score" id="resScore">0</div>
+      ${coinLine(res)}
       <div class="actions">
         <button class="btn-red" data-act="retry">再试一次</button>
         <button class="btn-ink" data-act="menu">选择关卡</button>
       </div>`));
     countUp($('resScore'), score, 700, 400);
+    afterResult(res);
   },
 
   // 无尽模式结算：没有失败，只有纪录
@@ -251,18 +256,21 @@ const ui = {
     if (isNew) store.set('endlessBest', score);
     store.set('endlessStage', Math.max(st.stage, store.get('endlessStage', 0)));
     store.set('endlessTime', Math.max(st.time, store.get('endlessTime', 0)));
+    const res = meta.finish(-1, game.run, { won: false, score, stars: 0, time: st.time });
     this.show(this.scroll(`
       <div class="stamp">${isNew && prev > 0 ? '新纪录' : '尽兴'}</div>
       <div class="s-level">无尽模式</div>
       <h2 class="s-title">坚持到${stageLabel(st.stage)}</h2>
       <div class="s-score" id="resScore">0</div>
       <div class="s-stats">坚持 <b>${fmtTime(st.time)}</b> · 最高连锁 <b>×${st.bestChain || 1}</b> · 最高分 <b>${Math.max(score, prev).toLocaleString()}</b></div>
+      ${coinLine(res)}
       <div class="actions">
         <button class="btn-red" data-act="retry">再战一夜</button>
         <button class="btn-ink" data-act="menu">返回首页</button>
       </div>`));
     if (isNew) setTimeout(() => sfx.star(2), 700);
     countUp($('resScore'), score, 900, 400);
+    afterResult(res);
   },
 
   showMenu() {
@@ -281,6 +289,7 @@ const ui = {
         <div class="tassel"></div>
         <div class="name">${l.name}</div>
         <div class="stars">${locked ? '&nbsp;' : starsHtml}</div>
+        <div class="chal-dots">${locked ? '' : chalState(i).map((d) => `<i class="${d ? 'on' : ''}"></i>`).join('')}</div>
       </button>`;
     });
     const rows = [];
@@ -297,8 +306,21 @@ const ui = {
           <span class="e-title">无尽模式</span>
           <span class="e-sub">${store.get('endlessBest', 0) ? `最高分 <b>${store.get('endlessBest', 0).toLocaleString()}</b> · 最远${stageLabel(store.get('endlessStage', 1))}` : '珠串永不停歇，看你能坚持多久'}</span>
         </button>
+        <div class="menu-tabs">
+          <button class="tab-btn" data-act="codex">
+            <span class="t-seal">谱</span>
+            <span class="t-txt"><b>灯谱</b><small>成就 ${meta.achCount()} / ${ACHIEVEMENTS.length}</small></span>
+            ${newAch() ? `<em class="dot">${newAch()}</em>` : ''}
+          </button>
+          <button class="tab-btn" data-act="shop">
+            <span class="t-seal gold">坊</span>
+            <span class="t-txt"><b>灯坊</b><small>${COIN}<span class="num">${meta.coins.toLocaleString()}</span></small></span>
+            ${affordable() ? '<em class="dot">!</em>' : ''}
+          </button>
+        </div>
         <div class="meta">
           <span class="total">★ <b>${total}</b> / ${LEVELS.length * 3}</span>
+          <span class="total">挑战 <b>${meta.chalDone()}</b> / ${LEVELS.length * 3}</span>
           <span class="howto">${how}<br>三珠同色即消 · 断口同色回吸成连锁 · 攒满「燎原」大爆发</span>
         </div>
         <div class="credits">
@@ -307,8 +329,165 @@ const ui = {
         </div>
       </div>`, false);
     this.menuOpen = true;
+    this.page = 'menu';
+  },
+
+  // —— 灯谱：成就图鉴 + 灯会志 ——
+  showCodex() {
+    meta.P.seen = meta.achCount();
+    store.set('profile', meta.P);
+    const L = meta.P.life;
+    const cats = [...new Set(ACHIEVEMENTS.map((a) => a.cat))];
+    const secs = cats.map((cat) => {
+      const list = ACHIEVEMENTS.filter((a) => a.cat === cat);
+      const got = list.filter((a) => meta.hasAch(a.id)).length;
+      const cards = list.map((a) => {
+        const on = meta.hasAch(a.id);
+        const hide = a.hidden && !on;
+        return `<div class="ach ${on ? 'on' : ''}">
+          ${sealHtml(hide ? '？？' : a.name, on)}
+          <div class="a-name">${hide ? '？？？' : a.name}</div>
+          <div class="a-desc">${hide ? '隐藏成就，达成后揭晓' : a.desc}</div>
+          <div class="a-coin">${COIN}${a.coin}</div>
+        </div>`;
+      }).join('');
+      return `<section><h3>${cat}<span>${got} / ${list.length}</span></h3><div class="ach-grid">${cards}</div></section>`;
+    }).join('');
+    const stat = (k, v) => `<div><b>${v}</b><span>${k}</span></div>`;
+    this.show(`
+      <div class="book">
+        <header class="book-head">
+          <button class="back" data-act="home" aria-label="返回">‹</button>
+          <h2>灯谱</h2>
+          <span class="seal-mini">${meta.achCount()} / ${ACHIEVEMENTS.length}</span>
+        </header>
+        <div class="journal">
+          ${stat('过关', L.wins.toLocaleString())}
+          ${stat('消除珠子', L.removed.toLocaleString())}
+          ${stat('燎原', L.fevers.toLocaleString())}
+          ${stat('完成挑战', meta.chalDone())}
+          ${stat('游玩时长', fmtHours(L.playTime))}
+          ${stat('累计灯币', L.coinsEarned.toLocaleString())}
+        </div>
+        ${secs}
+      </div>`, false);
+    this.menuOpen = false;
+    this.page = 'codex';
+  },
+
+  // —— 灯坊：用灯币换灯灵外观 ——
+  showShop() {
+    const P = meta.P;
+    const cards = SKINS.map((s) => {
+      const own = P.skins.includes(s.id);
+      const on = P.skin === s.id;
+      let btn;
+      if (on) btn = '<button class="sk-btn on" disabled>使用中</button>';
+      else if (own) btn = `<button class="sk-btn" data-act="equip" data-skin="${s.id}">换上</button>`;
+      else if (s.ach) btn = `<button class="sk-btn lock" disabled>成就「${meta.ach(s.ach).name}」解锁</button>`;
+      else btn = `<button class="sk-btn buy" data-act="buy" data-skin="${s.id}" ${P.coins < s.price ? 'disabled' : ''}>${COIN}${s.price}</button>`;
+      return `<div class="skin ${on ? 'on' : ''} ${own ? 'own' : ''}" style="--halo:#${s.halo.toString(16).padStart(6, '0')}">
+        <div class="sk-pic"><img src="${SKIN_CANVAS[s.id].toDataURL()}" alt="${s.name}"></div>
+        <div class="sk-name">${s.name}</div>
+        <div class="sk-desc">${s.desc}</div>
+        ${btn}
+      </div>`;
+    }).join('');
+    this.show(`
+      <div class="book">
+        <header class="book-head">
+          <button class="back" data-act="home" aria-label="返回">‹</button>
+          <h2>灯坊</h2>
+          <span class="wallet">${COIN}<b>${P.coins.toLocaleString()}</b></span>
+        </header>
+        <p class="book-sub">过关、完成挑战、达成成就都能得到灯币</p>
+        <div class="skin-grid">${cards}</div>
+      </div>`, false);
+    this.menuOpen = false;
+    this.page = 'shop';
+  },
+
+  // 局中事件 → 成就检查
+  onEvent(ev, run) {
+    for (const a of meta.onEvent(game.levelIndex, run, game.score)) toast(a);
   },
 };
+
+const COIN = '<i class="coin"></i>';
+const fmtHours = (sec) => (sec < 3600 ? `${Math.floor(sec / 60)} 分` : `${(sec / 3600).toFixed(1)} 时`);
+const newAch = () => Math.max(0, meta.achCount() - (meta.P.seen || 0));
+const affordable = () => SKINS.some((s) => !s.ach && !meta.P.skins.includes(s.id) && meta.coins >= s.price);
+
+// 印章：两到四个字，竖排从右往左
+function sealHtml(text, on) {
+  const n = [...text].length;
+  return `<div class="seal-s n${n} ${on ? 'on' : ''}"><span>${text}</span></div>`;
+}
+
+// 挑战列表：delay 有值时新完成的项逐条盖章
+function chalList(items, title, delay = 0) {
+  if (!items?.length) return '';
+  let k = 0;
+  const rows = items.map((c) => {
+    const d = c.isNew ? delay + (k++) * 280 : 0;
+    return `<li class="${c.done ? 'done' : ''} ${c.isNew ? 'new' : ''}" ${c.isNew ? `style="--d:${d}ms"` : ''}>
+      <i class="ck"></i><span>${c.text}</span>${c.prog && !c.done ? `<em>${c.prog}</em>` : c.isNew ? '<em class="nw">新达成</em>' : ''}
+    </li>`;
+  }).join('');
+  return `<div class="chal"><div class="chal-t">${title}</div><ul>${rows}</ul></div>`;
+}
+
+function coinLine(res) {
+  const parts = res.parts.filter((p) => p[1] > 0).map((p) => `${p[0]} +${p[1]}`).join(' · ');
+  return `<div class="coin-line">${COIN}<b id="resCoin">+0</b><span>${parts}</span></div>`;
+}
+
+function afterResult(res) {
+  const el = $('resCoin');
+  if (el && res.coins > 0) {
+    setTimeout(() => {
+      const t0 = performance.now();
+      const step = (t) => {
+        const k = Math.min(1, (t - t0) / 700);
+        el.textContent = '+' + Math.round(res.coins * (1 - (1 - k) ** 3));
+        if (k < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+      sfx.tick();
+    }, 1100);
+  }
+  $('screen').querySelectorAll('.chal li.new').forEach((li) => {
+    const d = parseInt(li.style.getPropertyValue('--d')) || 0;
+    setTimeout(() => sfx.star(1), d + 200);
+  });
+  res.unlocked.forEach((a, k) => setTimeout(() => toast(a), 1600 + k * 400));
+}
+
+// —— 成就达成横幅：排队依次弹出 ——
+const toastQ = [];
+let toastBusy = false;
+function toast(a) {
+  toastQ.push(a);
+  if (!toastBusy) nextToast();
+}
+function nextToast() {
+  const a = toastQ.shift();
+  if (!a) { toastBusy = false; return; }
+  toastBusy = true;
+  const el = $('toast');
+  el.innerHTML = `${sealHtml(a.name, true)}
+    <div class="t-body">
+      <em>成就达成</em>
+      <b>${a.name}</b>
+      <small>${a.desc} · ${COIN}+${a.coin}${a.skin ? ` · 解锁「${a.skin.name}」` : ''}</small>
+    </div>`;
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+  sfx.powerAppear();
+  setTimeout(() => sfx.star(2), 120);
+  setTimeout(() => { el.classList.remove('show'); setTimeout(nextToast, 380); }, 3000);
+}
 
 function countUp(el, to, dur, delay) {
   if (!el) return;
@@ -324,6 +503,7 @@ function countUp(el, to, dur, delay) {
 }
 
 const game = new Game(app, ui);
+game.setSkin(meta.skin().id, meta.skin().halo);
 let current = 0;
 
 function play(i) {
@@ -352,7 +532,21 @@ $('screen').addEventListener('click', (e) => {
   else if (act === 'next') play(Math.min(current + 1, LEVELS.length - 1));
   else if (act === 'menu') toMenu();
   else if (act === 'resume') game.resume();
+  else if (act === 'codex') ui.showCodex();
+  else if (act === 'shop') ui.showShop();
+  else if (act === 'home') ui.showMenu();
+  else if (act === 'buy') {
+    const got = meta.buy(b.dataset.skin);
+    if (got) { applySkin(); sfx.rainbow(); ui.showShop(); got.forEach(toast); }
+  } else if (act === 'equip') {
+    if (meta.equip(b.dataset.skin)) { applySkin(); sfx.powerAppear(); ui.showShop(); }
+  }
 });
+
+function applySkin() {
+  const s = meta.skin();
+  game.setSkin(s.id, s.halo);
+}
 
 $('btnPause').addEventListener('click', () => game.pause());
 // 交换按钮用 pointerdown，按下即生效，不等松手
@@ -374,5 +568,10 @@ window.addEventListener('resize', () => {
 });
 
 initDevPanel(() => game);
-fontsReady.then(toMenu);
+fontsReady.then(() => {
+  toMenu();
+  // 老存档：补发已经满足条件的成就（如累计星数）
+  const got = meta.check(meta.ctx(0, { powers: {} }));
+  if (got.length) { got.forEach(toast); ui.showMenu(); }
+});
 window.__game = game; // 调试用

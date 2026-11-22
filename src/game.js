@@ -47,6 +47,12 @@ export function trackDefs(lv) {
   return lv.tracks || [{ path: lv.path, count: lv.count }];
 }
 
+// 单局统计：成就与挑战都从这里读数
+const newRun = () => ({
+  shots: 0, misses: 0, swaps: 0, matches: 0, removed: 0, bestChain: 0, bestCombo: 0, bestBurst: 0,
+  powers: {}, powerCount: 0, fevers: 0, clears: 0, closeCalls: 0, gemHits: 0, stage: 1, maxLead: 0,
+});
+
 export class Game {
   constructor(app, ui) {
     this.app = app;
@@ -107,6 +113,20 @@ export class Game {
     window.addEventListener('resize', () => this.resize());
     window.addEventListener('orientationchange', () => setTimeout(() => this.resize(), 200));
     app.ticker.add(() => this.update(Math.min(app.ticker.deltaMS / 1000, 1 / 20)));
+  }
+
+  // 向局外系统（成就 / 挑战）报告事件
+  emit(ev, data) {
+    if (this.state === 'play') this.ui.onEvent?.(ev, this.run, data);
+  }
+
+  // 灯灵外观：纹理 + 光晕颜色
+  setSkin(id, halo) {
+    this.skinId = id;
+    this.skinHalo = halo ?? 0xffa53d;
+    if (this.shooter) {
+      this.shooter.lantern.texture = TEX.skins?.[id] || TEX.lantern;
+    }
   }
 
   // 所有轨道上的珠子（只读遍历用）
@@ -296,6 +316,8 @@ export class Game {
     this.waveCd = lv.surge ? lv.surge.every : 0;
 
     this.score = 0;
+    this.run = newRun();
+    this.closeT = 0;
     this.shotCombo = 0;
     this.bestChain = 0;
     this.removedCount = 0;
@@ -409,7 +431,7 @@ export class Game {
     const ring = new PIXI.Graphics();
     ring.lineStyle(2, 0xffd27a, 0.18).drawCircle(0, 0, MUZZLE);
     const body = new PIXI.Container();
-    const lantern = new PIXI.Sprite(TEX.lantern);
+    const lantern = new PIXI.Sprite(TEX.skins?.[this.skinId] || TEX.lantern);
     lantern.anchor.set(0.5, 100 / 220);
     lantern.scale.set(0.82);
     const eyes = new PIXI.Graphics();
@@ -421,7 +443,7 @@ export class Game {
     const cur = this.makeBallView(0, true);
     c.addChild(halo, ring, body, cur.view);
     this.shooterLayer.addChild(c);
-    this.shooter = { c, halo, ring, body, eyes, cur, next, recoil: 0, swapT: 0, transferT: 0, joy: 0, blink: 2 };
+    this.shooter = { c, halo, ring, body, eyes, lantern, cur, next, recoil: 0, swapT: 0, transferT: 0, joy: 0, blink: 2 };
   }
 
   makeBallView(color, innerGlow = false) {
@@ -587,6 +609,7 @@ export class Game {
     v.view.position.set(p.x, p.y);
     this.projLayer.addChild(v.view);
     this.projectiles.push(p);
+    this.run.shots++;
     const tint = COLORS[this.cur].tint;
     this.fx.ring(p.x, p.y, tint, 0.55, 0.2);
     this.fx.burst(p.x + dx * 10, p.y + dy * 10, tint, 4, 0.45, true);
@@ -605,6 +628,7 @@ export class Game {
     [this.cur, this.next] = [this.next, this.cur];
     this.updateAmmoView();
     this.shooter.swapT = 1;
+    this.run.swaps++;
     sfx.swap();
     buzz(6);
   }
@@ -670,6 +694,8 @@ export class Game {
     const n = 1 + Math.floor(this.levelTime / ENDLESS_STAGE);
     if (n === this.stage) return;
     this.stage = n;
+    this.run.stage = n;
+    this.emit('stage', n);
     const hadSurge = !!this.lv.surge;
     Object.assign(this.lv, endlessStage(n));
     if (this.lv.surge && !hadSurge) { this.waveCd = this.lv.surge.every; this.waveWarned = false; }
@@ -714,6 +740,8 @@ export class Game {
   onTrackCleared(tr, list) {
     const bonus = 500 * (this.feverT > 0 ? 2 : 1);
     this.addScore(bonus);
+    this.run.clears++;
+    this.emit('clear');
     this.setHitStop(0.18);
     this.punch(0.05);
     this.shake(12);
@@ -910,6 +938,13 @@ export class Game {
 
     if (fromShot) this.shotCombo++;
     this.bestChain = Math.max(this.bestChain, level);
+    const run = this.run;
+    run.matches++;
+    run.bestChain = Math.max(run.bestChain, level);
+    run.bestCombo = Math.max(run.bestCombo, this.shotCombo);
+    // 化险为夷：珠串已逼近古井时打出消除
+    const close = this.state === 'play' && this.lead(ball.tr) > 0.86;
+    if (close) run.closeCalls++;
     let pts = (n * 10 * level + (level > 1 ? 40 * level : 0)) * mult;
     if (fromShot && this.shotCombo >= 3) pts += this.shotCombo * 15 * mult;
     this.addScore(pts);
@@ -940,7 +975,13 @@ export class Game {
       this.shake(3);
     }
     sfx.match(level - 1 + Math.min(this.shotCombo, 4));
+    if (close && this.t - this.closeT > 4) {
+      this.closeT = this.t;
+      this.fx.text(cx, cy + 56, '化险为夷', { size: 48, fill: ['#e8fff4', '#4fe0a0'], stroke: '#03281a', dur: 1.3, rise: 50, font: 'brush' });
+      this.ui.flash('rgba(120,255,190,0.18)');
+    }
     this.destroyBalls(removed, level, cx, cy);
+    this.emit('match', { n, level, close });
 
     return true;
   }
@@ -975,6 +1016,10 @@ export class Game {
       if (had && !keep.length && tr.toSpawn > 0 && this.state === 'play') cleared.push(tr);
     }
     this.removedCount += n;
+    if (this.state === 'play') {
+      this.run.removed += n;
+      this.run.bestBurst = Math.max(this.run.bestBurst, n);
+    }
     if (this.state === 'play' && !this.boss?.dying) this.addFever(n * (1 + (level - 1) * 0.5));
     // 首领关：每颗被消除的珠子化作一团灯火飞向年兽
     if (this.boss && !this.boss.dying && this.state === 'play') {
@@ -1049,6 +1094,8 @@ export class Game {
     this.fever = 0;
     this.feverT = CFG.feverTime;
     this.feverShots = CFG.feverShots;
+    this.run.fevers++;
+    this.emit('fever');
     this.fx.text(500, 430, '灯火燎原', { size: 110, fill: ['#fffbe6', '#ffb02e', '#ff4d2e'], stroke: '#3a0a02', dur: 1.8, rise: 30, font: 'brush' });
     this.fx.ring(this.sx, this.sy, 0xffb347, 6, 0.9);
     this.fx.burst(this.sx, this.sy, 0xffb347, 40, 2.2);
@@ -1316,6 +1363,9 @@ export class Game {
       this.setHitStop(0.07);
       this.shooter.joy = 1;
       this.shotCombo++;
+      this.run.gemHits++;
+      this.run.bestCombo = Math.max(this.run.bestCombo, this.shotCombo);
+      this.emit('gem');
       this.addScore(100 * (this.feverT > 0 ? 2 : 1));
       b.attackT += 1;
       this.damageBoss(dmg, true);
@@ -1429,6 +1479,9 @@ export class Game {
     this.fx.text(p.x, p.y - 50, def.name, { size: 56, fill: ['#ffffff', def.color], stroke: '#14082a', dur: 1.3, rise: 80, font: 'brush' });
     this.fx.ring(p.x, p.y, def.tint, 2.6, 0.6);
     let pts = 50;
+    this.run.powers[p.type] = (this.run.powers[p.type] || 0) + 1;
+    this.run.powerCount++;
+    this.emit('power', p.type);
     switch (p.type) {
       case 'bomb': {
         const hit = this.ballsNear(p.x, p.y, CFG.bombRadius);
@@ -1502,6 +1555,7 @@ export class Game {
         p.view.destroy({ children: true });
         P.splice(i, 1);
         this.shotCombo = 0;
+        if (this.state === 'play') { this.run.misses++; this.emit('miss'); }
       }
     }
   }
@@ -1593,7 +1647,7 @@ export class Game {
     sh.body.position.set(-ca * rec * 0.4 + tremble, bob - sh.recoil * 3 - hop);
     sh.body.scale.set(1 + sh.recoil * 0.06 + sh.joy * 0.05, 1 - sh.recoil * 0.05 + sh.joy * 0.03);
     sh.halo.alpha = (fever ? 0.85 : 0.45) + Math.sin(this.t * (fever ? 9 : 3)) * 0.1 + sh.recoil * 0.3;
-    sh.halo.tint = fever ? 0xff6a1e : 0xffa53d;
+    sh.halo.tint = fever ? 0xff6a1e : (this.skinHalo ?? 0xffa53d);
     sh.halo.scale.set(fever ? 3.4 : 2.4);
     if (fever && Math.random() < 0.5) {
       const a = Math.random() * Math.PI * 2;
@@ -1740,6 +1794,7 @@ export class Game {
     if (this.state === 'play') {
       const lost = T.find((tr) => tr.balls.length && tr.balls[tr.balls.length - 1].s >= tr.path.length);
       if (lost) {
+        this.run.maxLead = Math.max(...T.map((tr) => tr.maxLead));
         this.state = 'lose';
         this.endTimer = 0;
         this.shake(14);
@@ -1747,6 +1802,7 @@ export class Game {
         sfx.lose();
         this.fx.text(500, 470, '灯火将熄', { size: 84, fill: ['#ffd6dc', '#ff5a6e'], stroke: '#2a0610', dur: 2, rise: 30, font: 'brush' });
       } else if (T.every((tr) => tr.toSpawn === 0 && tr.balls.length === 0) && (!this.boss || this.boss.dead)) {
+        this.run.maxLead = Math.max(...T.map((tr) => tr.maxLead));
         this.state = 'win';
         this.endTimer = 0;
         this.endFever();
