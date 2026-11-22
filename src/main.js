@@ -301,7 +301,10 @@ const ui = {
           <span class="total">★ <b>${total}</b> / ${LEVELS.length * 3}</span>
           <span class="howto">${how}<br>三珠同色即消 · 断口同色回吸成连锁 · 攒满「燎原」大爆发</span>
         </div>
-        <a class="credit" href="https://hbycrj.com" target="_blank" rel="noopener">清河县翼程软件开发 · <b>hbycrj.com</b></a>
+        <div class="credits">
+          <a class="credit more" href="https://hbycrj.com/games/">更多游戏 →</a>
+          <a class="credit" href="https://hbycrj.com" target="_blank" rel="noopener">清河县翼程软件开发 · <b>hbycrj.com</b></a>
+        </div>
       </div>`, false);
     this.menuOpen = true;
   },

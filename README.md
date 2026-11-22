@@ -9,7 +9,7 @@
 
 纯静态网页 · 零外网依赖 · 电脑与手机触屏都能玩
 
-### [▶ 在线试玩](https://hbycrj.com/games/zuma/)
+### [▶ 在线试玩](https://hbycrj.com/games/zuma/) &nbsp;·&nbsp; [🎮 翼程游戏大厅](https://hbycrj.com/games/)
 
 作者：[清河县翼程软件开发](https://hbycrj.com) · [hbycrj.com](https://hbycrj.com)
 
@@ -21,7 +21,7 @@
 
 ## 在线试玩
 
-打开 **<https://hbycrj.com/games/zuma/>** 即可直接游玩，电脑和手机浏览器都支持，无需下载安装。
+打开 **<https://hbycrj.com/games/zuma/>** 即可直接游玩，电脑和手机浏览器都支持，无需下载安装。更多游戏见 **[翼程游戏大厅](https://hbycrj.com/games/)**。
 
 ## 玩法
 
@@ -152,7 +152,7 @@ npm run fonts
 
 ## 作者
 
-由 **[清河县翼程软件开发](https://hbycrj.com)** 开发并开源。
+由 **[清河县翼程软件开发](https://hbycrj.com)** 开发并开源。更多作品见 [翼程游戏大厅](https://hbycrj.com/games/)。
 
 我们承接小程序、App、网站与企业软件定制开发，详见官网 [hbycrj.com](https://hbycrj.com)。
 
