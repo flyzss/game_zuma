@@ -7,7 +7,7 @@ export const PARAMS = [
   { key: 'fireCooldown', label: '发射间隔(秒)', def: 0.16, min: 0.05, max: 0.5, step: 0.01 },
 
   { group: '珠串' },
-  { key: 'speedMul', label: '推进速度倍率', def: 1, min: 0.3, max: 2.5, step: 0.05 },
+  { key: 'speedMul', label: '推进速度倍率', def: 1.5, min: 0.3, max: 3, step: 0.05 },
   { key: 'refillSpeed', label: '补珠冲入速度', def: 800, min: 0, max: 1400, step: 20 },
   { key: 'rushSpeed', label: '开局冲入速度', def: 560, min: 150, max: 1200, step: 10 },
   { key: 'retreatAcc', label: '回吸加速度', def: 2200, min: 300, max: 4000, step: 50 },
