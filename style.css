@@ -144,8 +144,8 @@ body.fever #feverGlow { opacity: 1; animation: flicker 0.9s ease-in-out infinite
   transition: transform .12s;
 }
 #score.bump { transform: scale(1.12); }
-.fever { display: flex; align-items: center; gap: 6px; }
-.fever span { font-family: var(--f-brush); font-size: 16px; color: #ffb36b; line-height: 1; }
+#feverBox { display: flex; align-items: center; gap: 6px; }
+#feverBox > span { font-family: var(--f-brush); font-size: 16px; color: #ffb36b; line-height: 1; }
 .fbar {
   width: 96px; height: 8px; border-radius: 4px; overflow: hidden;
   background: rgba(255, 120, 40, .12); box-shadow: inset 0 0 0 1px rgba(255, 150, 70, .35);
@@ -155,7 +155,7 @@ body.fever #feverGlow { opacity: 1; animation: flicker 0.9s ease-in-out infinite
   background: linear-gradient(90deg, #ff3d22, #ff9a2e 60%, #ffe08a);
   box-shadow: 0 0 10px #ff8a2e;
 }
-.fever.ready .fbar, body.fever .fbar { box-shadow: inset 0 0 0 1px #ffcf7a, 0 0 14px rgba(255, 140, 40, .8); }
+#feverBox.ready .fbar, body.fever .fbar { box-shadow: inset 0 0 0 1px #ffcf7a, 0 0 14px rgba(255, 140, 40, .8); }
 body.fever .fbar i { background-size: 200% 100%; background-image: linear-gradient(90deg, #ff3d22, #ffe08a, #ff3d22); animation: burn .5s linear infinite; }
 @keyframes burn { to { background-position: -200% 0; } }
 
@@ -239,7 +239,7 @@ body.boss #effects { top: calc(max(10px, env(safe-area-inset-top)) + 92px); }
 
 /* ---------- 覆盖层 ---------- */
 #overlay {
-  position: fixed; inset: 0;
+  position: fixed; inset: 0; z-index: 20;
   display: grid; place-items: center;
   padding: 16px;
   overflow-y: auto;
@@ -249,7 +249,10 @@ body.boss #effects { top: calc(max(10px, env(safe-area-inset-top)) + 92px); }
 }
 #overlay.hidden { opacity: 0; pointer-events: none; }
 #screen { width: 100%; display: flex; justify-content: center; }
-#overlay.dim { backdrop-filter: blur(3px); }
+#overlay.dim {
+  backdrop-filter: blur(4px);
+  background: radial-gradient(ellipse at 50% 40%, rgba(7, 8, 24, .62), rgba(3, 4, 12, .88));
+}
 @keyframes pop { from { transform: scale(.85); opacity: 0; } }
 
 /* ---------- 标题页 ---------- */
@@ -506,7 +509,7 @@ body.touch .btn-red { height: 58px; font-size: 26px; }
 body.touch .btn-ink { height: 52px; font-size: 17px; }
 body.touch .actions { gap: 12px; }
 body.touch .fx-chip { font-size: 16px; padding: 6px 14px 6px 12px; }
-body.touch .fever span { font-size: 18px; }
+body.touch #feverBox > span { font-size: 18px; }
 body.touch .fbar { height: 10px; border-radius: 5px; }
 body.touch #hint { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 86px); }
 
