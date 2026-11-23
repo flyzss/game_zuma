@@ -1,5 +1,5 @@
 // 局外系统：存档、成就「灯谱」、每关挑战、灯币与灯灵外观
-import { LEVELS } from './levels.js';
+import { LEVELS, ENDLESS_SCENES } from './levels.js';
 import { SKINS, BALL_SKINS, TRAILS } from './textures.js';
 import { DAILY, dayKey, prevDayKey } from './daily.js';
 
@@ -24,22 +24,31 @@ function defaults() {
   life.powers = {};
   return { coins: 0, life, ach: {}, chal: {}, skins: ['orange'], skin: 'orange', seen: 0, lit: 0,
     balls: ['classic'], ball: 'classic', trails: ['plain'], trail: 'plain',
+    scenes: ['default'], scene: 'default', endlessSeen: [],
     daily: { day: '', best: 0, done: false, streak: 0, lastDone: '', total: 0 } };
 }
 const P = Object.assign(defaults(), store.get('profile', {}));
 P.life = Object.assign(defaults().life, P.life);
 P.daily = Object.assign(defaults().daily, P.daily);
+if (!Array.isArray(P.scenes) || !P.scenes.length) P.scenes = ['default'];
+if (!ENDLESS_SCENES.some((s) => s.id === P.scene)) P.scene = 'default';
+if (!Array.isArray(P.endlessSeen)) P.endlessSeen = [];
 const save = () => store.set('profile', P);
 
 const totalStars = () => LEVELS.reduce((a, _, i) => a + store.get('stars' + i, 0), 0);
 const threeStarAll = () => LEVELS.every((_, i) => store.get('stars' + i, 0) >= 3);
 const buyable = SKINS.filter((s) => !s.ach && s.price > 0);
+const buyableBalls = BALL_SKINS.filter((s) => !s.ach && s.price > 0);
+const buyablePlush = BALL_SKINS.filter((s) => s.plush && !s.ach && s.price > 0);
+const plushIds = BALL_SKINS.filter((s) => s.plush).map((s) => s.id);
+const buyableScenes = ENDLESS_SCENES.filter((s) => !s.ach && s.price > 0);
 
 // 灯坊货架：类别 → 商品列表 / 已拥有字段 / 正在使用字段
 export const SHELVES = {
   lantern: { name: '灯灵', list: SKINS, own: 'skins', use: 'skin' },
   ball: { name: '珠子', list: BALL_SKINS, own: 'balls', use: 'ball' },
   trail: { name: '拖尾', list: TRAILS, own: 'trails', use: 'trail' },
+  scene: { name: '夜境', list: ENDLESS_SCENES, own: 'scenes', use: 'scene' },
 };
 const allBuyable = () => Object.values(SHELVES).flatMap((sh) => sh.list.filter((x) => !x.ach && x.price > 0).map((x) => [sh, x]));
 const boughtAny = () => Object.values(SHELVES).some((sh) => P[sh.own].length > 1);
@@ -105,6 +114,8 @@ export const ACHIEVEMENTS = [
   A('perk_8', '无尽长夜', '符箓满身', '一局无尽模式里选下 8 道灵符', 150, (c) => c.run.perks >= 8),
   A('gamble_3', '无尽长夜', '孤注一掷', '把博险符叠满三层', 200, (c) => c.level === -1 && (c.perks?.gamble || 0) >= 3),
   A('endless_50k', '无尽长夜', '灯火通宵', '无尽模式单局 50,000 分', 200, (c) => c.level === -1 && c.score >= 50000),
+  A('scene_tour', '无尽长夜', '游历夜境', '在 3 个不同的无尽场景里坚持到第五重（奖励：镜湖）', 180, () => P.endlessSeen.length >= 3),
+  A('endless_twin', '无尽长夜', '双龙守夜', '在双轨无尽场景里坚持到第八重', 220, (c) => c.level === -1 && !!c.run.twin && c.run.stage >= 8),
 
   // —— 每日一灯 ——
   A('daily_1', '每日一灯', '今夜有约', '完成一次每日一灯', 30, () => P.daily.total >= 1),
@@ -116,6 +127,12 @@ export const ACHIEVEMENTS = [
   // —— 灯坊珍藏 ——
   A('skin_1', '灯坊珍藏', '新灯初换', '在灯坊买下第一件商品', 20, boughtAny),
   A('skin_all', '灯坊珍藏', '灯坊常客', '买齐灯坊里所有的灯', 300, () => buyable.every((s) => P.skins.includes(s.id))),
+  A('plush_first', '灯坊珍藏', '萌宠初遇', '在灯坊买下第一款毛绒萌宠珠', 40, () => buyablePlush.some((s) => P.balls.includes(s.id))),
+  A('plush_all', '灯坊珍藏', '猫狗双全', '买齐灯坊里所有毛绒萌宠珠（奖励：招财猫）', 260, () => buyablePlush.every((s) => P.balls.includes(s.id))),
+  A('cat_night', '灯坊珍藏', '撸猫消珠', '换上毛绒萌宠珠过关一次，或在无尽坚持到第三重', 60, (c) => plushIds.includes(P.ball) && (won(c) || (c.level === -1 && c.run.stage >= 3))),
+  A('ball_all', '灯坊珍藏', '珠玉满堂', '买齐灯坊里所有可购买的珠子', 350, () => buyableBalls.every((s) => P.balls.includes(s.id))),
+  A('scene_first', '灯坊珍藏', '另辟夜境', '在灯坊买下第一个无尽场景', 40, () => buyableScenes.some((s) => P.scenes.includes(s.id))),
+  A('scene_all', '灯坊珍藏', '夜游百景', '买齐灯坊里所有可购买的无尽场景', 350, () => buyableScenes.every((s) => P.scenes.includes(s.id))),
   A('collector', '灯坊珍藏', '琳琅满目', '买齐灯坊里所有的商品', 800, () => allBuyable().every(([sh, x]) => P[sh.own].includes(x.id))),
   A('revive_win', '灯坊珍藏', '死灰复燃', '用灯油续燃之后仍然过关', 60, (c) => c.end?.won && (c.run.revives || 0) > 0),
   A('coins_5k', '灯坊珍藏', '腰缠万贯', '累计获得 5,000 灯币', 100, () => P.life.coinsEarned >= 5000),
@@ -181,6 +198,11 @@ export const meta = {
 
   // 检查未解锁的成就，返回新解锁列表（已发放灯币与外观）
   check(c) {
+    let dirty = false;
+    if (c.level === -1 && c.run?.stage >= 5 && c.run?.scene && !P.endlessSeen.includes(c.run.scene)) {
+      P.endlessSeen.push(c.run.scene);
+      dirty = true;
+    }
     const got = [];
     for (const a of ACHIEVEMENTS) {
       if (P.ach[a.id]) continue;
@@ -190,11 +212,17 @@ export const meta = {
       P.ach[a.id] = Date.now();
       P.coins += a.coin;
       P.life.coinsEarned += a.coin;
-      const skin = SKINS.find((s) => s.ach === a.id);
-      if (skin && !P.skins.includes(skin.id)) P.skins.push(skin.id);
-      got.push({ ...a, skin });
+      let reward = null;
+      for (const sh of Object.values(SHELVES)) {
+        const item = sh.list.find((s) => s.ach === a.id);
+        if (item) {
+          if (!P[sh.own].includes(item.id)) P[sh.own].push(item.id);
+          reward = item;
+        }
+      }
+      got.push({ ...a, skin: reward });
     }
-    if (got.length) save();
+    if (got.length || dirty) save();
     return got;
   },
 
@@ -296,5 +324,6 @@ export const meta = {
     return true;
   },
   skin: () => SKINS.find((s) => s.id === P.skin) || SKINS[0],
+  scene: () => ENDLESS_SCENES.find((s) => s.id === P.scene) || ENDLESS_SCENES[0],
   ach: (id) => ACH[id],
 };

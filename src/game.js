@@ -1,6 +1,6 @@
 import { Path } from './path.js';
-import { LEVELS, ENDLESS, ENDLESS_STAGE, endlessStage, NIGHT_DEPTHS } from './levels.js';
-import { COLORS, TEX, RAINBOW, POWERS } from './textures.js';
+import { LEVELS, ENDLESS_STAGE, endlessStage, endlessLevel, NIGHT_DEPTHS } from './levels.js';
+import { COLORS, TEX, RAINBOW, POWERS, BALL_SKINS } from './textures.js';
 import { FX } from './fx.js';
 import { sfx, music } from './audio.js';
 import { CFG } from './config.js';
@@ -216,8 +216,12 @@ export class Game {
     }
   }
 
-  setBallSkin(id) { if (TEX.ballSets?.[id]) TEX.balls = TEX.ballSets[id]; }
+  setBallSkin(id) {
+    if (TEX.ballSets?.[id]) TEX.balls = TEX.ballSets[id];
+    this.ballSoft = !!BALL_SKINS.find((b) => b.id === id)?.plush;
+  }
   setTrail(id) { this.trailId = id || 'plain'; }
+  setEndlessScene(id) { this.endlessScene = id || 'default'; }
 
   // 弹道拖尾：燎原时统一是火焰，平时按装备的样式
   emitTrail(p) {
@@ -464,8 +468,8 @@ export class Game {
 
   loadLevel(i, mode = 'play') {
     this.clearLevel();
-    // i < 0 为无尽模式：复制一份，难度参数会随"重"数改变
-    const lv = i === DAILY ? dailyLevel() : i < 0 ? { ...ENDLESS, ...endlessStage(1) } : LEVELS[i];
+    // i < 0 为无尽模式：按灯坊选中的场景组装一份，难度参数会随"重"数改变
+    const lv = i === DAILY ? dailyLevel() : i < 0 ? endlessLevel(this.endlessScene) : LEVELS[i];
     this.lv = lv;
     this.endless = !!lv.endless;
     this.daily = !!lv.daily;
@@ -501,6 +505,8 @@ export class Game {
 
     this.score = 0;
     this.run = newRun();
+    this.run.scene = lv.sceneId || null;
+    this.run.twin = !!lv.twin;
     this.closeT = 0;
     this.shotCombo = 0;
     this.comboTierNow = -1;
@@ -542,7 +548,7 @@ export class Game {
     this.loadLevel(i, 'play');
     this.ui.setLevel(i);
     if (this.daily) this.ui.hint(`每日一灯 · ${this.lv.rule.name}：${this.lv.rule.desc}`, 6000);
-    else if (this.endless) this.ui.hint(`无尽长夜：每 ${ENDLESS_STAGE} 秒升一重，速度越来越快，坚持得越久分越高`, 5000);
+    else if (this.endless) this.ui.hint(`无尽·${this.lv.sceneName || '长夜'}：${this.lv.twin ? '双轨齐进，' : ''}每 ${ENDLESS_STAGE} 秒升一重，坚持得越久分越高`, 5000);
     else if (this.boss) this.ui.hint('消除珠子化作灯火攻击年兽 · 用额头宝珠的颜色直击它', 6000);
     else if (this.tracks.length > 1) this.ui.hint('双轨来袭：两条珠串都不能让它们进井', 4000);
   }
@@ -657,13 +663,15 @@ export class Game {
     const shine = new PIXI.Sprite(TEX.shine);
     shine.anchor.set(0.5);
     shine.scale.set(D / 120);
+    shine.alpha = this.ballSoft && color !== RAINBOW ? 0.3 : 1;
     view.addChild(body, shine);
-    return { view, body, glow };
+    return { view, body, glow, shine };
   }
 
   setBallColor(v, color) {
     v.body.texture = TEX.balls[color];
     if (v.glow) v.glow.tint = COLORS[color].tint;
+    if (v.shine) v.shine.alpha = this.ballSoft && color !== RAINBOW ? 0.3 : 1;
   }
 
   makeBall(tr, color, s) {
@@ -901,7 +909,7 @@ export class Game {
     this.guardLeft = this.perk('guard');
     if (choiceStage(n)) this.chooseT = 1.7;   // 升重大字放完再选灵符
     const hadSurge = !!this.lv.surge;
-    Object.assign(this.lv, endlessStage(n));
+    Object.assign(this.lv, endlessStage(n, this.lv.twin));
     if (this.lv.surge && !hadSurge) { this.waveCd = this.lv.surge.every; this.waveWarned = false; }
     const bonus = 500 * (n - 1);
     this.addScore(bonus);
@@ -988,7 +996,7 @@ export class Game {
     const step = Math.max(1, Math.floor(mine.length / 8));
     for (let k = 0; k < mine.length; k += step) {
       const b = mine[k];
-      this.fx.burst(b.x, b.y, COLORS[(k + b.color) % 6].tint, 18, 1.5);
+      this.fx.burst(b.x, b.y, COLORS[(k + b.color) % RAINBOW].tint, 18, 1.5);
       this.fx.ring(b.x, b.y, 0xffffff, 1.6, 0.5);
     }
     this.fx.ring(this.sx, this.sy, 0xffd27a, 4.5, 0.8);
@@ -1648,7 +1656,7 @@ export class Game {
     b.dieT += dt;
     if (b.dieT < 2 && Math.random() < 0.6) {
       const a = Math.random() * Math.PI * 2, r = Math.random() * b.r;
-      this.fx.burst(b.x + Math.cos(a) * r, b.y + Math.sin(a) * r, COLORS[(Math.random() * 6) | 0].tint, 8, 1.2);
+      this.fx.burst(b.x + Math.cos(a) * r, b.y + Math.sin(a) * r, COLORS[(Math.random() * RAINBOW) | 0].tint, 8, 1.2);
     }
     if (b.dieT > 1.5) {
       const k = Math.min(1, (b.dieT - 1.5) / 0.7);
@@ -2050,7 +2058,7 @@ export class Game {
         this.fx.text(500, 470, '过关', { size: 120, dur: 1.8, rise: 40, font: 'brush' });
         for (let k = 0; k < 6; k++) {
           const a = (k / 6) * Math.PI * 2;
-          this.fx.burst(this.sx + Math.cos(a) * 120, this.sy + Math.sin(a) * 120, COLORS[k % 6].tint, 16, 1.3);
+          this.fx.burst(this.sx + Math.cos(a) * 120, this.sy + Math.sin(a) * 120, COLORS[k % RAINBOW].tint, 16, 1.3);
         }
         this.fx.ring(this.sx, this.sy, 0xffd27a, 4, 0.9);
         for (const tr of T) {

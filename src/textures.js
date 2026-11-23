@@ -1,15 +1,17 @@
 // 全部美术资源程序化生成（Canvas 2D → PIXI 纹理），后期可替换为正式美术图
+import { LEVELS, ENDLESS_SCENES } from './levels.js';
+import { Path } from './path.js';
+
 export const COLORS = [
   { hex: '#ff4b5c', light: '#ffd3d8', dark: '#6e0c1f', tint: 0xff4b5c, sym: 'ring' },
   { hex: '#ffc531', light: '#fff4c8', dark: '#7d4a00', tint: 0xffc531, sym: 'diamond' },
   { hex: '#35dc8a', light: '#d6ffea', dark: '#08603a', tint: 0x35dc8a, sym: 'tri' },
   { hex: '#36b3ff', light: '#d4f0ff', dark: '#0a4580', tint: 0x36b3ff, sym: 'square' },
   { hex: '#c25cf5', light: '#f3dcff', dark: '#4a0f78', tint: 0xc25cf5, sym: 'star' },
-  { hex: '#ff8fd6', light: '#ffe4f6', dark: '#7c1f5d', tint: 0xff8fd6, sym: 'cross' },
   // 彩珠：只作为发射物出现，插入时变成被击中珠子的颜色
   { hex: '#ffffff', light: '#ffffff', dark: '#5a4a8a', tint: 0xffffff, sym: 'rainbow' },
 ];
-export const RAINBOW = 6;
+export const RAINBOW = 5;
 
 // 道具：随机附着在珠串上的珠子，限时，消除该珠即触发
 export const POWERS = {
@@ -74,11 +76,11 @@ function rainbowBallTex() {
   let gr;
   if (g.createConicGradient) {
     gr = g.createConicGradient(0, C, C);
-    COLORS.slice(0, 6).forEach((col, i) => gr.addColorStop(i / 6, col.hex));
+    COLORS.slice(0, RAINBOW).forEach((col, i) => gr.addColorStop(i / RAINBOW, col.hex));
     gr.addColorStop(1, COLORS[0].hex);
   } else {
     gr = g.createLinearGradient(0, 0, S, S);
-    COLORS.slice(0, 6).forEach((col, i) => gr.addColorStop(i / 5, col.hex));
+    COLORS.slice(0, RAINBOW).forEach((col, i) => gr.addColorStop(i / (RAINBOW - 1), col.hex));
   }
   g.fillStyle = gr;
   g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.fill();
@@ -141,15 +143,24 @@ function iconTex(type) {
   return PIXI.Texture.from(c);
 }
 
-// 珠子外观：每种都保留颜色符号（色弱辅助），只换质感
+// 珠子外观：传统材质 + 毛绒萌宠（plush 为毛绒系，柔和反光更显毛绒质感）
 export const BALL_SKINS = [
   { id: 'classic', name: '彩釉珠', desc: '灯会上最常见的彩釉，干净利落', price: 0 },
   { id: 'glass', name: '琉璃珠', desc: '通透的琉璃，里面流着光', price: 1200 },
+  { id: 'mirror', name: '镜面珠', desc: '纯色镜面玻璃，无纹无饰，干净通透清爽', price: 1400 },
+  { id: 'cat', name: '绒猫珠', desc: '毛茸茸的小猫团子，软乎乎滚过长夜', price: 1600, plush: true },
+  { id: 'yarn', name: '毛线球', desc: '绕得密实的彩毛线团，滚起来像逗猫玩', price: 1800, plush: true },
   { id: 'jade', name: '温玉珠', desc: '温润如玉，带着云絮般的玉纹', price: 2000 },
+  { id: 'bunny', name: '垂耳兔', desc: '圆滚滚的绒毛兔团，软耳朵贴着脸颊', price: 2200, plush: true },
+  { id: 'paw', name: '肉垫珠', desc: '软糯的毛绒小猫爪，印着圆圆的肉垫', price: 2400, plush: true },
+  { id: 'bear', name: '绒熊珠', desc: '蓬松的泰迪小熊团，圆耳朵藏着暖意', price: 2800, plush: true },
   { id: 'star', name: '星辰珠', desc: '每一颗里都藏着一小片星空', price: 3000 },
+  { id: 'pet', name: '百兽团', desc: '五色化作狐柴蛙企枭，五只萌宠绝不看混', price: 3800, plush: true },
   { id: 'gilt', name: '鎏金珠', desc: '描金宝相花纹，富丽堂皇', price: 4500 },
+  { id: 'fortune', name: '招财猫', desc: '集齐所有毛绒萌宠后点亮，系着金铃的招财小猫', ach: 'plush_all', plush: true },
 ];
 export const BALL_CANVAS = {};
+export const SCENE_CANVAS = {};
 
 // 弹道拖尾
 export const TRAILS = [
@@ -166,10 +177,473 @@ function seeded(n) {
   return () => ((s = (s * 16807) % 2147483647) / 2147483647);
 }
 
+// 毛绒珠公共绘制：圆润天鹅绒底 + 逆光绒晕（Velvet Rim）+ 柔雾棉感，光滑柔软无杂刺
+function drawPlushBase(g, C, r, col, idx) {
+  const rnd = seeded(idx * 37 + 13);
+  const br = r - 1.5;
+
+  // 外缘极柔羽化绒晕（模拟细绒毛在光线下的柔和毛边，无锯齿）
+  const fuzz = g.createRadialGradient(C, C, br * 0.84, C, C, r);
+  fuzz.addColorStop(0, col.hex + '00');
+  fuzz.addColorStop(0.55, col.light + '55');
+  fuzz.addColorStop(1, col.light + '00');
+  g.fillStyle = fuzz;
+  g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.fill();
+
+  g.save();
+  g.beginPath(); g.arc(C, C, br, 0, Math.PI * 2); g.fillStyle = col.hex; g.fill();
+  g.clip();
+
+  // 哑光柔雾球体明暗：大面积干净本色，边缘温和压深
+  const gr = g.createRadialGradient(C - 10, C - 14, 6, C + 4, C + 6, br * 1.06);
+  gr.addColorStop(0, col.hex);
+  gr.addColorStop(0.62, col.hex);
+  gr.addColorStop(0.92, col.dark);
+  gr.addColorStop(1, col.dark);
+  g.fillStyle = gr;
+  g.fillRect(0, 0, C * 2, C * 2);
+
+  // 蓬松棉云柔斑（极低透明大柔光团，营造暖绒布面而非生硬线条）
+  for (let k = 0; k < 7; k++) {
+    const a = rnd() * Math.PI * 2, d = 8 + rnd() * (br * 0.55);
+    const x = C + Math.cos(a) * d, y = C + Math.sin(a) * d, pr = 22 + rnd() * 18;
+    const pf = g.createRadialGradient(x, y, 0, x, y, pr);
+    pf.addColorStop(0, k % 2 ? 'rgba(255,255,255,0.08)' : col.light + '18');
+    pf.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = pf;
+    g.fillRect(0, 0, C * 2, C * 2);
+  }
+
+  // 天鹅绒逆光亮边（Fresnel 绒毛边缘光，毛绒玩具最核心的柔软质感）
+  const rim = g.createRadialGradient(C, C, br * 0.68, C, C, br);
+  rim.addColorStop(0, 'rgba(255,255,255,0)');
+  rim.addColorStop(0.68, col.light + '14');
+  rim.addColorStop(0.9, col.light + '66');
+  rim.addColorStop(1, col.light + '18');
+  g.fillStyle = rim;
+  g.fillRect(0, 0, C * 2, C * 2);
+
+  // 左上方柔和粉雾暖光（哑光棉感，不刺眼）
+  const hi = g.createRadialGradient(C - 16, C - 20, 2, C - 12, C - 14, br * 0.62);
+  hi.addColorStop(0, 'rgba(255,255,255,0.24)');
+  hi.addColorStop(0.55, 'rgba(255,255,255,0.08)');
+  hi.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = hi;
+  g.fillRect(0, 0, C * 2, C * 2);
+
+  g.restore();
+}
+
+function drawEye(g, x, y, rx = 5.4, ry = 6.4) {
+  g.fillStyle = '#24141a';
+  g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#ffffff';
+  g.beginPath(); g.arc(x - rx * 0.34, y - ry * 0.32, rx * 0.38, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(x + rx * 0.28, y + ry * 0.32, rx * 0.18, 0, Math.PI * 2); g.fill();
+}
+
+function drawBlush(g, x, y, idx, rx = 8.5, ry = 5) {
+  g.fillStyle = idx === 0 ? 'rgba(255,225,180,0.42)' : 'rgba(255,140,175,0.45)';
+  g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); g.fill();
+}
+
+function drawCatMouth(g, y = 10, s = 1) {
+  g.strokeStyle = '#331922';
+  g.lineWidth = 2.6 * s;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.beginPath();
+  g.moveTo(-8 * s, y);
+  g.quadraticCurveTo(-4 * s, y + 5.5 * s, 0, y + 0.5 * s);
+  g.quadraticCurveTo(4 * s, y + 5.5 * s, 8 * s, y);
+  g.stroke();
+}
+
+function drawPlushStyle(g, C, r, col, style, idx) {
+  if (style === 'yarn') {
+    // 毛线球：粗实柔和的三组大股毛线交叠缠绕，圆润温暖不密集
+    drawPlushBase(g, C, r, col, idx);
+    g.save();
+    g.beginPath(); g.arc(C, C, r - 1.5, 0, Math.PI * 2); g.clip();
+    g.translate(C, C);
+    g.lineCap = 'round';
+    const bands = [
+      { rot: -0.52, offs: [-26, -12, 2, 16, 30], bend: 20 },
+      { rot: 0.62, offs: [-20, -6, 8, 22], bend: 22 },
+      { rot: 1.72, offs: [-14, 0, 14], bend: 18 },
+    ];
+    for (const b of bands) {
+      g.save();
+      g.rotate(b.rot);
+      // 整束毛线的柔和底影，让层叠更有立体蓬松感
+      g.beginPath();
+      g.moveTo(-72, b.offs[0] - 8);
+      g.quadraticCurveTo(0, b.offs[0] + b.bend, 72, b.offs[0] - 8);
+      g.lineTo(72, b.offs[b.offs.length - 1] + 8);
+      g.quadraticCurveTo(0, b.offs[b.offs.length - 1] + b.bend + 10, -72, b.offs[b.offs.length - 1] + 8);
+      g.closePath();
+      g.fillStyle = col.dark + '44';
+      g.fill();
+      for (const yy of b.offs) {
+        // 柔和阴影槽
+        g.beginPath();
+        g.moveTo(-72, yy - 10);
+        g.quadraticCurveTo(0, yy + b.bend, 72, yy - 10);
+        g.strokeStyle = col.dark + '66';
+        g.lineWidth = 11.5;
+        g.stroke();
+        // 饱满主毛线股
+        g.strokeStyle = col.hex;
+        g.lineWidth = 8.5;
+        g.stroke();
+        // 绒感柔亮丝
+        g.beginPath();
+        g.moveTo(-68, yy - 11.5);
+        g.quadraticCurveTo(0, yy + b.bend - 2, 68, yy - 11.5);
+        g.strokeStyle = col.light + '66';
+        g.lineWidth = 2.6;
+        g.stroke();
+      }
+      g.restore();
+    }
+    // 外圈再叠一层柔暗球面体积与天鹅绒亮边，让线团圆鼓鼓
+    const vol = g.createRadialGradient(-10, -14, 8, 0, 0, r);
+    vol.addColorStop(0, 'rgba(255,255,255,0.12)');
+    vol.addColorStop(0.65, 'rgba(0,0,0,0)');
+    vol.addColorStop(0.92, col.dark + '88');
+    vol.addColorStop(1, col.light + '55');
+    g.fillStyle = vol;
+    g.fillRect(-C, -C, C * 2, C * 2);
+    // 中心轻压色弱符号
+    g.globalAlpha = 0.5;
+    g.fillStyle = col.dark; g.strokeStyle = col.dark; g.lineJoin = 'round';
+    symbol(g, col.sym, 16);
+    g.restore();
+    return;
+  }
+
+  drawPlushBase(g, C, r, col, idx);
+  g.save();
+  g.translate(C, C);
+
+  if (style === 'cat' || style === 'fortune') {
+    const lucky = style === 'fortune';
+    // 圆润尖猫耳（贴边收在圆内）
+    for (const side of [-1, 1]) {
+      g.save();
+      g.scale(side, 1);
+      g.beginPath();
+      g.moveTo(12, -40); g.quadraticCurveTo(28, -55, 38, -44);
+      g.quadraticCurveTo(44, -30, 34, -20); g.closePath();
+      g.fillStyle = col.dark;
+      g.globalAlpha = 0.55; g.fill();
+      g.globalAlpha = 1;
+      g.beginPath();
+      g.moveTo(16, -38); g.quadraticCurveTo(27, -49, 34, -41);
+      g.quadraticCurveTo(37, -31, 30, -24); g.closePath();
+      g.fillStyle = lucky ? '#ffd870' : col.light;
+      g.fill();
+      g.restore();
+    }
+    // 额头虎斑（招财猫换金色福纹）
+    g.strokeStyle = lucky ? '#ffe27a' : col.dark + '99';
+    g.lineWidth = 3.2; g.lineCap = 'round';
+    for (const dx of [-8, 0, 8]) {
+      g.beginPath(); g.moveTo(dx, -38 + Math.abs(dx) * 0.25); g.lineTo(dx * 0.85, -26); g.stroke();
+    }
+    // 眼睛：普通绒猫水汪汪圆眼，招财猫笑眯眯弯眼
+    if (lucky) {
+      g.strokeStyle = '#2d1418'; g.lineWidth = 3.6; g.lineCap = 'round';
+      for (const side of [-1, 1]) {
+        g.beginPath(); g.arc(side * 16, -2, 8.5, Math.PI * 1.12, Math.PI * 1.88); g.stroke();
+      }
+    } else {
+      drawEye(g, -16, -3, 5.8, 6.8);
+      drawEye(g, 16, -3, 5.8, 6.8);
+    }
+    drawBlush(g, -26, 7, idx, 8.5, 4.8);
+    drawBlush(g, 26, 7, idx, 8.5, 4.8);
+    // 小鼻 + ω 猫嘴
+    g.fillStyle = idx === 0 ? '#ffe1c6' : '#ff8eb3';
+    g.beginPath(); g.moveTo(-4.5, 4); g.lineTo(4.5, 4); g.lineTo(0, 9); g.closePath(); g.fill();
+    drawCatMouth(g, 10, 1);
+    // 两侧胡须
+    g.strokeStyle = '#2d1418aa'; g.lineWidth = 2; g.lineCap = 'round';
+    for (const side of [-1, 1]) {
+      g.beginPath();
+      g.moveTo(side * 25, 4); g.lineTo(side * 42, 0);
+      g.moveTo(side * 25, 11); g.lineTo(side * 42, 13);
+      g.stroke();
+    }
+    if (lucky) {
+      // 招财猫红金项圈 + 小金铃
+      g.save();
+      g.beginPath(); g.arc(0, 0, r - 1, 0, Math.PI * 2); g.clip();
+      g.strokeStyle = '#c81e2c'; g.lineWidth = 9; g.lineCap = 'round';
+      g.beginPath(); g.arc(0, -10, 44, Math.PI * 0.25, Math.PI * 0.75); g.stroke();
+      g.strokeStyle = '#ffd76a'; g.lineWidth = 2;
+      g.beginPath(); g.arc(0, -10, 40, Math.PI * 0.27, Math.PI * 0.73); g.stroke();
+      g.restore();
+      const bg = g.createRadialGradient(-3, 31, 1, 0, 34, 11);
+      bg.addColorStop(0, '#fff7c4'); bg.addColorStop(0.55, '#ffc93c'); bg.addColorStop(1, '#9c5c08');
+      g.fillStyle = bg;
+      g.beginPath(); g.arc(0, 34, 10.5, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#733e04'; g.lineWidth = 1.6; g.stroke();
+      g.fillStyle = '#5c2e02';
+      g.beginPath(); g.arc(0, 36, 2.2, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.moveTo(-6, 36); g.lineTo(6, 36); g.stroke();
+    }
+  } else if (style === 'bunny') {
+    // 垂耳兔：贴着两颊垂落的软耳朵 + 头顶绒毛团
+    for (const side of [-1, 1]) {
+      g.save();
+      g.scale(side, 1);
+      g.beginPath();
+      g.moveTo(18, -34);
+      g.bezierCurveTo(44, -30, 52, 4, 40, 26);
+      g.bezierCurveTo(31, 34, 22, 18, 26, -6);
+      g.closePath();
+      g.fillStyle = col.dark; g.globalAlpha = 0.48; g.fill();
+      g.globalAlpha = 1;
+      g.beginPath();
+      g.ellipse(35, 3, 6.5, 16, -0.18, 0, Math.PI * 2);
+      g.fillStyle = col.light; g.globalAlpha = 0.85; g.fill();
+      g.restore();
+    }
+    // 头顶软绒卷毛
+    g.fillStyle = col.light; g.globalAlpha = 0.78;
+    for (const [x, y, rr] of [[-7, -36, 7], [0, -39, 8.5], [7, -36, 7]]) {
+      g.beginPath(); g.arc(x, y, rr, 0, Math.PI * 2); g.fill();
+    }
+    g.globalAlpha = 1;
+    drawEye(g, -13, -5, 5.6, 6.6);
+    drawEye(g, 13, -5, 5.6, 6.6);
+    drawBlush(g, -20, 7, idx, 7.5, 4.5);
+    drawBlush(g, 20, 7, idx, 7.5, 4.5);
+    // 兔鼻与 Y 字小嘴
+    g.fillStyle = idx === 0 ? '#ffe1c6' : '#ff94b8';
+    g.beginPath(); g.ellipse(0, 4, 4.2, 3, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#331922'; g.lineWidth = 2.4; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(0, 7); g.lineTo(0, 12); g.moveTo(0, 12); g.lineTo(-6, 16); g.moveTo(0, 12); g.lineTo(6, 16); g.stroke();
+  } else if (style === 'paw') {
+    // 肉垫珠：中心胖嘟嘟的猫爪印（掌心 + 4 颗圆趾垫）
+    const drawPad = (fn) => {
+      g.save();
+      g.translate(0, 3);
+      g.fillStyle = col.dark + '66';
+      fn(); g.fill();
+      g.restore();
+      g.fillStyle = col.light;
+      fn(); g.fill();
+    };
+    // 掌心（圆润心形垫）
+    drawPad(() => {
+      g.beginPath();
+      g.moveTo(0, -3);
+      g.bezierCurveTo(18, -10, 28, 8, 22, 22);
+      g.bezierCurveTo(15, 31, 6, 26, 0, 24);
+      g.bezierCurveTo(-6, 26, -15, 31, -22, 22);
+      g.bezierCurveTo(-28, 8, -18, -10, 0, -3);
+      g.closePath();
+    });
+    // 四颗圆润小趾垫
+    const toes = [[-26, -8, 8.5, 10.5, -0.38], [-10, -24, 9, 11.5, -0.14], [10, -24, 9, 11.5, 0.14], [26, -8, 8.5, 10.5, 0.38]];
+    for (const [x, y, rx, ry, rot] of toes) {
+      drawPad(() => { g.beginPath(); g.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2); });
+    }
+    // 掌心高光点
+    g.fillStyle = 'rgba(255,255,255,0.6)';
+    g.beginPath(); g.ellipse(-7, 9, 5, 3, -0.4, 0, Math.PI * 2); g.fill();
+  } else if (style === 'bear') {
+    // 绒熊珠：圆熊耳 + 奶色吻部 + 纽扣鼻 + 玩偶缝线
+    for (const side of [-1, 1]) {
+      g.fillStyle = col.dark; g.globalAlpha = 0.48;
+      g.beginPath(); g.arc(side * 30, -31, 14, 0, Math.PI * 2); g.fill();
+      g.globalAlpha = 0.88; g.fillStyle = col.light;
+      g.beginPath(); g.arc(side * 30, -31, 8, 0, Math.PI * 2); g.fill();
+    }
+    g.globalAlpha = 1;
+    // 额头玩偶针脚线
+    g.strokeStyle = col.dark + '66'; g.lineWidth = 2; g.setLineDash([4, 4]);
+    g.beginPath(); g.moveTo(0, -48); g.lineTo(0, -18); g.stroke();
+    g.setLineDash([]);
+    // 浅色吻部
+    g.fillStyle = col.light; g.globalAlpha = 0.86;
+    g.beginPath(); g.ellipse(0, 14, 21, 15.5, 0, 0, Math.PI * 2); g.fill();
+    g.globalAlpha = 1;
+    drawEye(g, -17, -7, 5.2, 5.8);
+    drawEye(g, 17, -7, 5.2, 5.8);
+    drawBlush(g, -27, 4, idx, 7.5, 4.5);
+    drawBlush(g, 27, 4, idx, 7.5, 4.5);
+    // 巧克力色熊鼻 + 笑嘴
+    g.fillStyle = '#361a12';
+    g.beginPath(); g.ellipse(0, 8, 7.2, 5, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.45)';
+    g.beginPath(); g.ellipse(-2, 6.5, 2.5, 1.3, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#361a12'; g.lineWidth = 2.4; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(0, 13); g.lineTo(0, 17); g.stroke();
+    drawCatMouth(g, 17, 0.95);
+  } else if (style === 'pet') {
+    // 百兽团：五色对应五只不同绒毛萌宠（红狐、黄柴、绿蛙、蓝企鹅、紫猫头鹰）
+    if (idx === 0) {
+      // 红：小狐狸
+      for (const side of [-1, 1]) {
+        g.save(); g.scale(side, 1);
+        g.beginPath(); g.moveTo(10, -42); g.lineTo(36, -46); g.lineTo(34, -18); g.closePath();
+        g.fillStyle = '#4a0814'; g.fill();
+        g.beginPath(); g.moveTo(16, -38); g.lineTo(31, -40); g.lineTo(29, -23); g.closePath();
+        g.fillStyle = col.light; g.fill();
+        // 尖毛蓬松白脸颊
+        g.beginPath(); g.moveTo(0, 14); g.quadraticCurveTo(24, 4, 44, 14); g.quadraticCurveTo(36, 36, 0, 42); g.closePath();
+        g.fillStyle = col.light; g.globalAlpha = 0.88; g.fill();
+        g.restore();
+      }
+      drawEye(g, -15, -6, 5.5, 6.2);
+      drawEye(g, 15, -6, 5.5, 6.2);
+      g.fillStyle = '#2d1016';
+      g.beginPath(); g.ellipse(0, 9, 5.5, 4, 0, 0, Math.PI * 2); g.fill();
+      drawCatMouth(g, 15, 0.9);
+    } else if (idx === 1) {
+      // 黄：小柴犬
+      for (const side of [-1, 1]) {
+        g.save(); g.scale(side, 1);
+        g.beginPath(); g.moveTo(14, -40); g.quadraticCurveTo(32, -52, 38, -32); g.lineTo(28, -22); g.closePath();
+        g.fillStyle = col.dark; g.globalAlpha = 0.55; g.fill(); g.globalAlpha = 1;
+        g.beginPath(); g.moveTo(19, -37); g.quadraticCurveTo(30, -44, 33, -32); g.lineTo(26, -26); g.closePath();
+        g.fillStyle = '#fff4d4'; g.fill();
+        g.restore();
+      }
+      // 柴犬标志奶油脸颊 + 豆豆眉
+      g.fillStyle = '#fff5d8'; g.globalAlpha = 0.9;
+      g.beginPath(); g.ellipse(0, 18, 30, 19, 0, 0, Math.PI * 2); g.fill();
+      for (const side of [-1, 1]) { g.beginPath(); g.ellipse(side * 15, -18, 5.5, 3.8, side * -0.2, 0, Math.PI * 2); g.fill(); }
+      g.globalAlpha = 1;
+      drawEye(g, -16, -4, 5.2, 5.6);
+      drawEye(g, 16, -4, 5.2, 5.6);
+      g.fillStyle = '#331c0a';
+      g.beginPath(); g.ellipse(0, 7, 6.2, 4.5, 0, 0, Math.PI * 2); g.fill();
+      // 开心小舌头
+      g.fillStyle = '#ff6b8b';
+      g.beginPath(); g.arc(0, 18, 5, 0, Math.PI); g.fill();
+      drawCatMouth(g, 14, 1);
+    } else if (idx === 2) {
+      // 绿：小青蛙
+      g.fillStyle = col.light; g.globalAlpha = 0.72;
+      g.beginPath(); g.ellipse(0, 28, 34, 20, 0, 0, Math.PI * 2); g.fill();
+      g.globalAlpha = 1;
+      for (const side of [-1, 1]) {
+        g.fillStyle = col.hex;
+        g.beginPath(); g.arc(side * 20, -21, 15, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = col.dark + '88'; g.lineWidth = 2.5; g.stroke();
+        g.fillStyle = '#ffffff';
+        g.beginPath(); g.arc(side * 20, -21, 10.5, 0, Math.PI * 2); g.fill();
+        drawEye(g, side * 20, -21, 6, 6.5);
+      }
+      drawBlush(g, -28, 3, idx, 8.5, 5);
+      drawBlush(g, 28, 3, idx, 8.5, 5);
+      g.strokeStyle = '#07482a'; g.lineWidth = 3.2; g.lineCap = 'round';
+      g.beginPath(); g.arc(0, 0, 21, Math.PI * 0.16, Math.PI * 0.84); g.stroke();
+    } else if (idx === 3) {
+      // 蓝：小企鹅
+      g.fillStyle = '#f2f9ff'; g.globalAlpha = 0.92;
+      g.beginPath();
+      g.moveTo(0, -16);
+      g.bezierCurveTo(18, -32, 36, -14, 34, 16);
+      g.bezierCurveTo(32, 40, -32, 40, -34, 16);
+      g.bezierCurveTo(-36, -14, -18, -32, 0, -16);
+      g.closePath(); g.fill();
+      g.globalAlpha = 1;
+      drawEye(g, -15, -6, 5.4, 6.2);
+      drawEye(g, 15, -6, 5.4, 6.2);
+      drawBlush(g, -24, 6, idx, 7, 4.2);
+      drawBlush(g, 24, 6, idx, 7, 4.2);
+      // 橘黄小菱形嘴
+      g.fillStyle = '#ffb326';
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(10, 8); g.lineTo(0, 16); g.lineTo(-10, 8); g.closePath(); g.fill();
+      g.strokeStyle = '#b86200'; g.lineWidth = 1.6; g.stroke();
+    } else {
+      // 紫：小猫头鹰
+      for (const side of [-1, 1]) {
+        g.save(); g.scale(side, 1);
+        g.beginPath(); g.moveTo(14, -36); g.lineTo(35, -45); g.lineTo(30, -24); g.closePath();
+        g.fillStyle = col.dark; g.fill();
+        // 大圆眼圈
+        g.fillStyle = col.light; g.globalAlpha = 0.9;
+        g.beginPath(); g.arc(16, -7, 15, 0, Math.PI * 2); g.fill();
+        g.restore();
+      }
+      g.globalAlpha = 1;
+      drawEye(g, -16, -7, 6.8, 7.2);
+      drawEye(g, 16, -7, 6.8, 7.2);
+      // 金色小尖喙
+      g.fillStyle = '#ffd24c';
+      g.beginPath(); g.moveTo(0, -1); g.lineTo(7, 9); g.lineTo(0, 17); g.lineTo(-7, 9); g.closePath(); g.fill();
+      // 肚皮羽毛弧纹
+      g.strokeStyle = col.light + 'cc'; g.lineWidth = 2.6; g.lineCap = 'round';
+      for (const [x, y] of [[-13, 25], [0, 29], [13, 25]]) {
+        g.beginPath(); g.arc(x, y, 6, Math.PI * 0.15, Math.PI * 0.85); g.stroke();
+      }
+    }
+  }
+  g.restore();
+}
+
 function ballTex(col, style = 'classic', idx = 0) {
   if (col.sym === 'rainbow') return rainbowBallTex();
   const S = 128, C = 64, r = 60;
   const [c, g] = canvas(S, S);
+  const sk = BALL_SKINS.find((b) => b.id === style);
+  if (sk?.plush) {
+    drawPlushStyle(g, C, r, col, style, idx);
+    (BALL_CANVAS[style] ||= [])[idx] = c;
+    return PIXI.Texture.from(c);
+  }
+  if (style === 'mirror') {
+    // 镜面玻璃珠：纯色无纹理，中心通透清亮、外缘自带玻璃折射亮边（旋转对称，搭配固定高光层更清爽）
+    const gr = g.createRadialGradient(C, C, 2, C, C, r);
+    gr.addColorStop(0, col.light + 'aa');
+    gr.addColorStop(0.28, col.hex);
+    gr.addColorStop(0.76, col.hex);
+    gr.addColorStop(0.94, col.dark);
+    gr.addColorStop(1, col.light);
+    g.fillStyle = col.hex;
+    g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.fill();
+    g.fillStyle = gr;
+    g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.fill();
+    // 极细玻璃内圈折射亮线
+    g.strokeStyle = 'rgba(255,255,255,0.34)';
+    g.lineWidth = 2.2;
+    g.beginPath(); g.arc(C, C, r - 2.2, 0, Math.PI * 2); g.stroke();
+    // 商店静态预览叠加镜面窗光与底部通透焦散（局内由固定不转的 TEX.shine 提供）
+    const [pc, pg] = canvas(S, S);
+    pg.drawImage(c, 0, 0);
+    pg.save();
+    pg.beginPath(); pg.arc(C, C, r, 0, Math.PI * 2); pg.clip();
+    // 底部清透焦散反光
+    const cau = pg.createRadialGradient(C + 14, C + 32, 2, C + 14, C + 32, 34);
+    cau.addColorStop(0, 'rgba(255,255,255,0.58)');
+    cau.addColorStop(0.6, col.light + '44');
+    cau.addColorStop(1, 'rgba(255,255,255,0)');
+    pg.fillStyle = cau; pg.fillRect(0, 0, S, S);
+    // 左上镜面月牙高光
+    pg.save();
+    pg.translate(C - 18, C - 22);
+    pg.rotate(-0.62);
+    pg.scale(1, 0.54);
+    const sp = pg.createRadialGradient(0, 0, 0, 0, 0, 26);
+    sp.addColorStop(0, 'rgba(255,255,255,0.96)');
+    sp.addColorStop(0.55, 'rgba(255,255,255,0.55)');
+    sp.addColorStop(1, 'rgba(255,255,255,0)');
+    pg.fillStyle = sp;
+    pg.beginPath(); pg.arc(0, 0, 26, 0, Math.PI * 2); pg.fill();
+    pg.restore();
+    // 利落镜面小星点
+    pg.fillStyle = 'rgba(255,255,255,0.96)';
+    pg.beginPath(); pg.arc(C - 26, C - 28, 4.2, 0, Math.PI * 2); pg.fill();
+    pg.restore();
+    (BALL_CANVAS[style] ||= [])[idx] = pc;
+    return PIXI.Texture.from(c);
+  }
   const clip = () => { g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.clip(); };
   let gr;
   if (style === 'glass') {
@@ -736,12 +1210,72 @@ function bgTex() {
   return PIXI.Texture.from(c);
 }
 
+// 灯坊里无尽场景的迷你轨道预览图
+function scenePreview(sc) {
+  const S = 180, pad = 16, scale = (S - pad * 2) / 1000;
+  const [c, g] = canvas(S, S);
+  const mx = (x) => pad + x * scale, my = (y) => pad + y * scale;
+  // 深蓝夜空圆形底
+  g.save();
+  g.beginPath(); g.arc(S / 2, S / 2, S / 2 - 2, 0, Math.PI * 2); g.clip();
+  const bg = g.createRadialGradient(S / 2, S * 0.45, 6, S / 2, S / 2, S * 0.55);
+  bg.addColorStop(0, '#252a68'); bg.addColorStop(0.65, '#11143a'); bg.addColorStop(1, '#07081a');
+  g.fillStyle = bg; g.fillRect(0, 0, S, S);
+  const rnd = seeded(sc.lv * 19 + sc.id.length * 7);
+  for (let i = 0; i < 24; i++) {
+    g.fillStyle = `rgba(255,240,210,${0.2 + rnd() * 0.45})`;
+    g.beginPath(); g.arc(rnd() * S, rnd() * S, 0.7 + rnd() * 0.9, 0, Math.PI * 2); g.fill();
+  }
+
+  const src = LEVELS[sc.lv];
+  const defs = src.tracks || [{ path: src.path }];
+  const tmp = { x: 0, y: 0, tx: 1, ty: 0 };
+  defs.forEach((def, k) => {
+    const p = new Path(def.path, 4);
+    const colA = k === 0 ? '#7868ff' : '#35cde8';
+    const colB = k === 0 ? '#c4b8ff' : '#9cf0ff';
+    g.beginPath();
+    for (let s = 0; s <= p.length; s += 14) {
+      p.at(s, tmp);
+      s ? g.lineTo(mx(tmp.x), my(tmp.y)) : g.moveTo(mx(tmp.x), my(tmp.y));
+    }
+    p.at(p.length, tmp);
+    g.lineTo(mx(tmp.x), my(tmp.y));
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    g.strokeStyle = colA + '55'; g.lineWidth = 10; g.stroke();
+    g.strokeStyle = colA; g.lineWidth = 5; g.stroke();
+    g.strokeStyle = colB; g.lineWidth = 2; g.stroke();
+    // 终点古井光点
+    const hx = mx(tmp.x), hy = my(tmp.y);
+    g.fillStyle = '#ff4f7a';
+    g.beginPath(); g.arc(hx, hy, 5.5, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#ffd0de'; g.lineWidth = 1.6; g.stroke();
+  });
+
+  // 主角灯灵位置
+  const [sx, sy] = src.shooter;
+  const gx = mx(sx), gy = my(sy);
+  const sh = g.createRadialGradient(gx, gy, 1, gx, gy, 15);
+  sh.addColorStop(0, '#fff7cf'); sh.addColorStop(0.45, '#ffbe42'); sh.addColorStop(1, 'rgba(255,170,50,0)');
+  g.fillStyle = sh;
+  g.beginPath(); g.arc(gx, gy, 15, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#fff5cc';
+  g.beginPath(); g.arc(gx, gy, 5, 0, Math.PI * 2); g.fill();
+  g.restore();
+
+  // 外缘细金圈
+  g.strokeStyle = 'rgba(255,216,130,0.32)'; g.lineWidth = 2;
+  g.beginPath(); g.arc(S / 2, S / 2, S / 2 - 2, 0, Math.PI * 2); g.stroke();
+  SCENE_CANVAS[sc.id] = c;
+}
+
 export function buildTextures() {
   TEX.ballSets = {};
   for (const sk of BALL_SKINS) TEX.ballSets[sk.id] = COLORS.map((col, i) => ballTex(col, sk.id, i));
   TEX.balls = TEX.ballSets.classic;
   TEX.petal = petalTex();
   for (const t of TRAILS) trailPreview(t);
+  for (const sc of ENDLESS_SCENES) scenePreview(sc);
   TEX.icons = {};
   for (const k of Object.keys(POWERS)) TEX.icons[k] = iconTex(k);
   TEX.shine = shineTex();

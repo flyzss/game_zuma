@@ -4,7 +4,7 @@ import { LEVELS, ENDLESS } from './levels.js';
 import { sfx } from './audio.js';
 import { loadCfg } from './config.js';
 import { initDevPanel } from './devpanel.js';
-import { COLORS, RAINBOW, SKINS, SKIN_CANVAS, BALL_CANVAS, TRAIL_CANVAS } from './textures.js';
+import { COLORS, RAINBOW, SKINS, SKIN_CANVAS, BALL_CANVAS, TRAIL_CANVAS, SCENE_CANVAS } from './textures.js';
 import { store, meta, ACHIEVEMENTS, CHALLENGES, chalState, SHELVES, REVIVE_COST } from './meta.js';
 import { TAL, COMBO_TIERS, BAG_SIZE, CURSE_SPEED, CURSE_SCORE } from './perks.js';
 import { DAILY, dailyLevel, prevDayKey } from './daily.js';
@@ -13,7 +13,7 @@ import { drawShareCard, SHARE_URL } from './share.js';
 const $ = (id) => document.getElementById(id);
 const CN = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十'];
 const lvLabel = (i) => (i === DAILY ? '每日一灯' : i < 0 ? '无尽模式' : `第${CN[i] || i + 1}关`);
-const lvName = (i) => (i === DAILY ? dailyLevel().name : i < 0 ? ENDLESS.name : LEVELS[i].name);
+const lvName = (i) => (i === DAILY ? dailyLevel().name : i < 0 ? meta.scene().name : LEVELS[i].name);
 const stageLabel = (n) => `第${CN[n - 1] || n}重`;
 const fmtTime = (t) => `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
 
@@ -339,9 +339,10 @@ const ui = {
     store.set('endlessStage', Math.max(st.stage, store.get('endlessStage', 0)));
     store.set('endlessTime', Math.max(st.time, store.get('endlessTime', 0)));
     const res = meta.finish(-1, game.run, { won: false, score, stars: 0, time: st.time });
+    const scName = game.lv?.sceneName || meta.scene().name;
     this.show(this.scroll(`
       <div class="stamp">${isNew && prev > 0 ? '新纪录' : '尽兴'}</div>
-      <div class="s-level">无尽模式</div>
+      <div class="s-level">无尽模式 · ${scName}</div>
       <h2 class="s-title">坚持到${stageLabel(st.stage)}</h2>
       <div class="s-score" id="resScore">0</div>
       <div class="s-stats">坚持 <b>${fmtTime(st.time)}</b> · 最高连锁 <b>×${st.bestChain || 1}</b> · 最高分 <b>${Math.max(score, prev).toLocaleString()}</b></div>
@@ -355,7 +356,7 @@ const ui = {
         </div>
       </div>`));
     this.lastShare = {
-      kind: '无尽模式', title: `坚持到${stageLabel(st.stage)}`, score, stars: null,
+      kind: `无尽模式 · ${scName}`, title: `坚持到${stageLabel(st.stage)}`, score, stars: null,
       lines: [['坚持', fmtTime(st.time)], ['灵符', `${Object.values(st.perks || {}).reduce((a, b) => a + b, 0)} 道`]],
       badge: comboBadge(),
     };
@@ -428,8 +429,8 @@ const ui = {
         <div class="lantern-map">${rows.join('')}</div>
         ${dailyHtml()}
         <button class="endless-btn" data-act="play" data-lv="-1">
-          <span class="e-title">无尽模式</span>
-          <span class="e-sub">${store.get('endlessBest', 0) ? `最高分 <b>${store.get('endlessBest', 0).toLocaleString()}</b> · 最远${stageLabel(store.get('endlessStage', 1))}` : '珠串永不停歇，看你能坚持多久'}</span>
+          <span class="e-title">无尽模式 · ${meta.scene().name}</span>
+          <span class="e-sub">${store.get('endlessBest', 0) ? `最高分 <b>${store.get('endlessBest', 0).toLocaleString()}</b> · 最远${stageLabel(store.get('endlessStage', 1))}` : '珠串永不停歇，可在灯坊更换夜境场景'}</span>
         </button>
         <div class="menu-tabs">
           <button class="tab-btn" data-act="codex">
@@ -501,7 +502,7 @@ const ui = {
     this.page = 'codex';
   },
 
-  // —— 灯坊：灯灵 / 珠子 / 拖尾 三个货架 ——
+  // —— 灯坊：灯灵 / 珠子 / 拖尾 / 夜境 四个货架 ——
   shopTab: 'lantern',
   showShop(tab = this.shopTab) {
     this.shopTab = tab;
@@ -509,7 +510,8 @@ const ui = {
     const sh = SHELVES[tab];
     const pic = (s) => {
       if (tab === 'lantern') return `<img src="${imgUrl('l-' + s.id, SKIN_CANVAS[s.id])}" alt="${s.name}">`;
-      if (tab === 'ball') return `<span class="ball-row">${[0, 1, 2, 3].map((k) => `<img src="${imgUrl(`b-${s.id}-${k}`, BALL_CANVAS[s.id][k])}" alt="">`).join('')}</span>`;
+      if (tab === 'ball') return `<span class="ball-row">${[0, 1, 2, 3, 4].map((k) => `<img src="${imgUrl(`b-${s.id}-${k}`, BALL_CANVAS[s.id][k])}" alt="">`).join('')}</span>`;
+      if (tab === 'scene') return `<img class="scene-pic" src="${imgUrl('s-' + s.id, SCENE_CANVAS[s.id])}" alt="${s.name}">`;
       return `<img class="trail-pic" src="${imgUrl('t-' + s.id, TRAIL_CANVAS[s.id])}" alt="${s.name}">`;
     };
     const cards = sh.list.map((s) => {
@@ -520,8 +522,10 @@ const ui = {
       else if (own) btn = `<button class="sk-btn" data-act="equip" data-kind="${tab}" data-skin="${s.id}">换上</button>`;
       else if (s.ach) btn = `<button class="sk-btn lock" disabled>成就「${meta.ach(s.ach).name}」解锁</button>`;
       else btn = `<button class="sk-btn buy" data-act="buy" data-kind="${tab}" data-skin="${s.id}" ${P.coins < s.price ? 'disabled' : ''}>${COIN}${s.price.toLocaleString()}</button>`;
-      const halo = s.halo != null ? `#${s.halo.toString(16).padStart(6, '0')}` : '#ffd27a';
+      const halo = s.halo != null ? `#${s.halo.toString(16).padStart(6, '0')}` : s.twin ? '#58d8ff' : s.plush ? '#ffb3cf' : '#ffd27a';
+      const tag = s.twin ? '<span class="sk-tag twin">双轨</span>' : s.plush ? '<span class="sk-tag plush">毛绒</span>' : '';
       return `<div class="skin kind-${tab} ${on ? 'on' : ''} ${own ? 'own' : ''}" style="--halo:${halo}">
+        ${tag}
         <div class="sk-pic">${pic(s)}</div>
         <div class="sk-name">${s.name}</div>
         <div class="sk-desc">${s.desc}</div>
@@ -532,6 +536,9 @@ const ui = {
       const n = v.list.filter((x) => P[v.own].includes(x.id)).length;
       return `<button class="shop-tab ${k === tab ? 'on' : ''}" data-act="shoptab" data-tab="${k}">${v.name}<small>${n}/${v.list.length}</small></button>`;
     }).join('');
+    const sub = tab === 'scene'
+      ? '换上心仪的「夜境」即可在无尽模式中游玩；双轨夜境已自动平衡推进速度'
+      : '过关、完成挑战、达成成就都能得到灯币；珠串进井时还能花灯币「续燃」';
     this.show(`
       <div class="book">
         <header class="book-head">
@@ -540,7 +547,7 @@ const ui = {
           <span class="wallet">${COIN}<b>${P.coins.toLocaleString()}</b></span>
         </header>
         <div class="shop-tabs">${tabs}</div>
-        <p class="book-sub">过关、完成挑战、达成成就都能得到灯币；珠串进井时还能花灯币「续燃」</p>
+        <p class="book-sub">${sub}</p>
         <div class="skin-grid">${cards}</div>
       </div>`, false);
     this.menuOpen = false;
@@ -857,6 +864,7 @@ function applySkin() {
   game.setSkin(s.id, s.halo);
   game.setBallSkin(meta.P.ball);
   game.setTrail(meta.P.trail);
+  game.setEndlessScene(meta.P.scene);
 }
 
 $('btnPause').addEventListener('click', () => game.pause());

@@ -144,29 +144,66 @@ LEVELS.forEach((lv, i) => {
   if (lv.surge === undefined && !lv.boss && i >= 8) lv.surge = { every: Math.max(13, 22 - (i - 8) * 1.2), mul: 2.1, dur: 1.5 };
 });
 
-// —— 无尽模式：一条长螺旋，珠串永不停歇；每 ENDLESS_STAGE 秒进入下一"重"，越来越快 ——
+// —— 无尽模式：珠串永不停歇；每 ENDLESS_STAGE 秒进入下一"重"，越来越快 ——
 export const ENDLESS_STAGE = 35;
+
+// 灯坊可解锁的无尽场景：复用主线经典地形（默认保留「万家灯火」长螺旋）
+export const ENDLESS_SCENES = [
+  { id: 'default', lv: 15, name: '万家灯火', desc: '经典长螺旋，灯火漫卷，最适合初探无尽长夜', price: 0 },
+  { id: 'river',   lv: 1,  name: '曲水流灯', desc: '蜿蜒曲水大回环，中后段视野开阔，节奏明快', price: 1000 },
+  { id: 'lotus',   lv: 5,  name: '莲花灯',   desc: '五瓣莲花旋入，弧线优雅，穿瓣连消爽快', price: 1400 },
+  { id: 'bamboo',  lv: 6,  name: '竹林小径', desc: '竖列折返长径，灯灵居侧，斜射截击手感独特', price: 1800 },
+  { id: 'bridge',  lv: 9,  name: '九曲桥',   desc: '层层横桥步步逼近，隔桥狙击最考准头', price: 2200 },
+  { id: 'maze',    lv: 12, name: '回字阵',   desc: '两圈方正回字阵，拐角密集，适合连环夹心', price: 2600 },
+  { id: 'magpie',  lv: 4,  name: '鹊桥相会', desc: '双轨夹击，上下两道灯龙齐进，控场刺激倍增', price: 3200, twin: true },
+  { id: 'dragons', lv: 7,  name: '双龙戏珠', desc: '双螺旋交错盘入，穿内圈打外圈的高阶舞台', price: 3800, twin: true },
+  { id: 'mirror',  lv: 13, name: '镜湖',     desc: '左右镜像逆行双轨，游历三个无尽场景后解锁', ach: 'scene_tour', twin: true },
+];
+
 export const ENDLESS = {
   name: '无尽长夜', endless: true, colors: 4, speed: 42, rushTo: 0.3, shooter: [500, 500],
   ramp: 0, zip: 0.45, setup: 0.4, depth: [1, 3], surge: null,
-  path: [[150, 960], ...spiral({ r0: 462, r1: 170, a0: 90, turns: 2.25, ccw: true })],
+  path: LEVELS[15].path,
 };
 
+// 按灯坊选中的场景组装一局无尽模式关卡
+export function endlessLevel(sceneId = 'default') {
+  const sc = ENDLESS_SCENES.find((s) => s.id === sceneId) || ENDLESS_SCENES[0];
+  const src = LEVELS[sc.lv];
+  const lv = {
+    ...ENDLESS,
+    name: `无尽·${sc.name}`,
+    sceneId: sc.id,
+    sceneName: sc.name,
+    twin: !!sc.twin,
+    shooter: src.shooter,
+    rushTo: src.rushTo ?? ENDLESS.rushTo,
+    ...endlessStage(1, !!sc.twin),
+  };
+  if (src.tracks) {
+    lv.tracks = src.tracks.map((t) => ({ ...t }));
+    delete lv.path;
+  } else {
+    lv.path = src.path;
+  }
+  return lv;
+}
+
 // 第 n 重（从 1 开始）的难度：前 10 重快速升温，之后缓慢但持续地变难、没有上限
-// 夜深：压力一层层错开加入，每 4～5 重才多一样新花样，避免一下子陡起来
+// 夜深：压力一层层错开加入，最多 5 种颜色，避免后期陡峭与辨色混淆
 export const NIGHT_DEPTHS = [
   { n: 16, text: '夜深 · 墨染：不时有墨点把珠子染成别的颜色' },
-  { n: 20, text: '夜深 · 第六种颜色出现' },
   { n: 25, text: '夜深 · 潮涌更急更猛' },
   { n: 30, text: '夜更深 · 墨染更密' },
 ];
-export function endlessStage(n) {
-  // 速度：1～10 重每重 +6，10～24 重每重 +3，之后每重 +2.5（线性，不封顶）
-  const speed = n <= 10 ? 42 + (n - 1) * 6 : n <= 24 ? 96 + (n - 10) * 3 : 138 + (n - 24) * 2.5;
+export function endlessStage(n, twin = false) {
+  // 速度：1～10 重每重 +6，10～24 重每重 +3，之后每重 +2.5（线性，不封顶）；双轨按 0.72 倍平衡
+  const baseSpeed = n <= 10 ? 42 + (n - 1) * 6 : n <= 24 ? 96 + (n - 10) * 3 : 138 + (n - 24) * 2.5;
+  const speed = twin ? Math.round(baseSpeed * 0.72) : baseSpeed;
   const late = Math.max(0, n - 25);
   return {
     speed,
-    colors: n <= 3 ? 4 : n < 20 ? 5 : 6,
+    colors: n <= 3 ? 4 : 5,
     zip: Math.max(0.12, 0.45 - (n - 1) * 0.03),        // 送分的拉链段越来越少
     setup: Math.max(0.3, 0.4 - Math.max(0, n - 8) * 0.01),
     depth: n <= 2 ? [1, 2] : n <= 5 ? [1, 3] : [2, 4],
