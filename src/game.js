@@ -1,6 +1,6 @@
 import { Path } from './path.js';
 import { LEVELS, ENDLESS_STAGE, endlessStage, endlessLevel, NIGHT_DEPTHS } from './levels.js';
-import { COLORS, TEX, RAINBOW, POWERS, BALL_SKINS } from './textures.js';
+import { COLORS, TEX, RAINBOW, BOLT, POWERS, BALL_SKINS } from './textures.js';
 import { FX } from './fx.js';
 import { sfx, music } from './audio.js';
 import { CFG } from './config.js';
@@ -225,9 +225,24 @@ export class Game {
   setTrail(id) { this.trailId = id || 'plain'; }
   setEndlessScene(id) { this.endlessScene = id || 'default'; }
 
-  // 弹道拖尾：燎原时统一是火焰，平时按装备的样式
+  // 弹道拖尾：闪电球为电弧，燎原时为火焰，平时按装备的样式
   emitTrail(p) {
     const fx = this.fx, x = p.x, y = p.y;
+    if (p.bolt) {
+      fx.trail(x, y, 0x63e8ff, 2.2);
+      fx.trail(x, y, 0xffffff, 0.9);
+      if (Math.random() < 0.75) {
+        fx._add(TEX.spark, x + (Math.random() - 0.5) * 24, y + (Math.random() - 0.5) * 24, {
+          tint: Math.random() < 0.5 ? 0xffffff : 0x63e8ff,
+          vx: (Math.random() - 0.5) * 140, vy: (Math.random() - 0.5) * 140,
+          max: 0.22 + Math.random() * 0.14, s0: 0.38, s1: 0, spin: 12,
+        });
+      }
+      if (Math.random() < 0.45) {
+        fx.bolt(x, y, x - p.vx * 0.03 + (Math.random() - 0.5) * 34, y - p.vy * 0.03 + (Math.random() - 0.5) * 34, 0x63e8ff, 0.14);
+      }
+      if (!p.fire) return;
+    }
     if (p.fire) {
       fx.trail(x, y, 0xff6a1e, 2.6);
       fx.trail(x, y, 0xffe08a, 1.1);
@@ -539,8 +554,11 @@ export class Game {
     this.reverseT = 0;
     this.fever = 0;
     this.feverT = 0;
+    this.boltCharge = 0;
+    this.boltQueued = false;
     this.ui.setEffects(0, 0);
     this.ui.setFever(0, false);
+    this.ui.setBolt(0, false);
     this.ui.setFeverMode(false);
     this.cur = this.pickColor();
     this.next = this.pickColor();
@@ -708,7 +726,7 @@ export class Game {
     const shine = new PIXI.Sprite(TEX.shine);
     shine.anchor.set(0.5);
     shine.scale.set(D / 120);
-    shine.alpha = this.ballSoft && color !== RAINBOW ? 0.3 : 1;
+    shine.alpha = this.ballSoft && color !== RAINBOW && color !== BOLT ? 0.3 : 1;
     view.addChild(body, shine);
     return { view, body, glow, shine };
   }
@@ -716,7 +734,7 @@ export class Game {
   setBallColor(v, color) {
     v.body.texture = TEX.balls[color];
     if (v.glow) v.glow.tint = COLORS[color].tint;
-    if (v.shine) v.shine.alpha = this.ballSoft && color !== RAINBOW ? 0.3 : 1;
+    if (v.shine) v.shine.alpha = this.ballSoft && color !== RAINBOW && color !== BOLT ? 0.3 : 1;
   }
 
   makeBall(tr, color, s) {
@@ -827,8 +845,8 @@ export class Game {
   refreshAmmo() {
     const set = this.presentColors();
     if (!set.size) return;
-    if (this.cur !== RAINBOW && !set.has(this.cur)) this.cur = this.pickColor();
-    if (this.next !== RAINBOW && !set.has(this.next)) this.next = this.pickColor();
+    if (this.cur !== RAINBOW && this.cur !== BOLT && !set.has(this.cur)) this.cur = this.pickColor();
+    if (this.next !== RAINBOW && this.next !== BOLT && !set.has(this.next)) this.next = this.pickColor();
     this.updateAmmoView();
   }
 
@@ -843,12 +861,23 @@ export class Game {
   shoot() {
     if (this.state !== 'play' || this.cooldown > 0) return;
     const dx = Math.cos(this.aimAng), dy = Math.sin(this.aimAng);
+    const isBolt = this.cur === BOLT;
     const v = this.makeBallView(this.cur, true);
     const p = {
       color: this.cur, x: this.sx + dx * MUZZLE, y: this.sy + dy * MUZZLE,
       vx: dx * CFG.shotSpeed * (1 + 0.25 * this.perk('swift')), vy: dy * CFG.shotSpeed * (1 + 0.25 * this.perk('swift')), view: v.view, body: v.body,
       fire: this.feverT > 0,   // 灯火燎原：火珠，打到哪炸到哪（含计数打完后的余焰收尾）
+      bolt: isBolt,            // 惊雷：闪电球，投中哪种颜色清空全场同色
     };
+    if (isBolt) {
+      this.boltCharge = 0;
+      v.glow.tint = 0x63e8ff;
+      v.glow.alpha = 0.9;
+      v.view.scale.set(1.24);
+      this.fx.ring(p.x, p.y, 0x63e8ff, 1.5, 0.28);
+      this.fx.burst(p.x, p.y, 0x63e8ff, 14, 1.1, true);
+      this.shake(4);
+    }
     if (p.fire) {
       this.addFireLayer(v);
       p.fireV = v.fire;
@@ -860,8 +889,8 @@ export class Game {
       this.fx._add(TEX.glow, p.x, p.y, { tint: 0xff8a2e, max: 0.22, s0: 1.4, s1: 2.6, a0: 0.9 });
       this.fx.ring(p.x, p.y, 0xff7a2e, 1.4, 0.28);
       this.shake(4);
-      this.feverShots--;
-      if (this.feverShots > 0) {
+      // 闪电球借燎原之火化作"天火雷劫"，不占用火珠计数
+      if (isBolt) { /* 不计数 */ } else if (--this.feverShots > 0) {
         this.fx.text(this.sx, this.sy - 110, `火珠 ×${this.feverShots}`, { size: 34, fill: ['#fffbe6', '#ff9d3c'], stroke: '#3a0a02', dur: 0.7, rise: 40, font: 'brush' });
       } else if (this.feverShots === 0) {
         // 计数火珠打完：进入余焰，短时间内连点仍是火珠，奖励手快的玩家
@@ -888,6 +917,7 @@ export class Game {
     this.shooter.recoil = 1;
     this.shooter.transferT = 1;
     sfx.shoot();
+    if (isBolt) sfx.zap();
     buzz(8);
   }
 
@@ -925,6 +955,8 @@ export class Game {
         if (this.feverT <= 0) this.endFever();
       }
       this.ui.setFever(this.feverT > 0 ? Math.max(0, this.feverShots) / (CFG.feverShots + 2 * this.perk('ember')) : this.fever, this.feverT > 0);
+      const boltReady = this.hasBoltInHand() || this.boltQueued;
+      this.ui.setBolt(boltReady ? 1 : this.boltCharge, boltReady);
     }
     if (this.state === 'play' || this.state === 'lose' || this.state === 'win') {
       this.updatePowers(gdt);
@@ -1292,7 +1324,8 @@ export class Game {
   }
 
   // 移除一组珠子（可不连续、可跨轨道）：从 (ox,oy) 向外依次爆开、断口记录连锁层级、触发其中的道具
-  destroyBalls(list, level, ox, oy) {
+  // src：'match' 常规消除 / 'fire' 燎原火珠 / 'bolt' 闪电球 / 'power' 道具珠
+  destroyBalls(list, level, ox, oy, src = 'match') {
     if (!list.length) return 0;
     const set = new Set(list);
     const powers = [];
@@ -1325,7 +1358,15 @@ export class Game {
       this.run.removed += n;
       this.run.bestBurst = Math.max(this.run.bestBurst, n);
     }
-    if (this.state === 'play' && !this.boss?.dying) this.addFever(n * (1 + (level - 1) * 0.5));
+    if (this.state === 'play' && !this.boss?.dying) {
+      // 燎原充能：火珠自身爆炸不再回充，杜绝余焰收尾白嫖下一管；闪电球按 50% 助攻燎原
+      if (src === 'match') this.addFever(n * (1 + (level - 1) * 0.5));
+      else if (src === 'bolt') this.addFever(n * 0.5);
+      else if (src === 'power') this.addFever(n * 0.6);
+      // 惊雷充能：常规消除 + 连锁大幅加速；火珠与闪电球自身不回充，防无限套娃
+      if (src === 'match') this.addBolt(n * (1 + (level - 1) * 0.85));
+      else if (src === 'power') this.addBolt(n * 0.4);
+    }
     // 首领关：每颗被消除的珠子化作一团灯火飞向年兽
     if (this.boss && !this.boss.dying && this.state === 'play') {
       const dmg = level * (this.feverT > 0 ? 2 : 1);
@@ -1393,7 +1434,8 @@ export class Game {
   // ================= 灯火燎原（Fever） =================
   addFever(amount) {
     if (this.feverT > 0 || CFG.feverNeed <= 0) return;
-    this.fever += (amount * (1 + 0.3 * this.perk('blaze'))) / (CFG.feverNeed * (this.lv.feverMul || 1));
+    const stageScale = this.endless ? 1 + Math.max(0, this.stage - 8) * 0.04 : 1;
+    this.fever += (amount * (1 + 0.25 * this.perk('blaze'))) / (CFG.feverNeed * stageScale * (this.lv.feverMul || 1));
     if (this.fever >= 1) this.startFever();
   }
 
@@ -1418,6 +1460,106 @@ export class Game {
   endFever() {
     this.feverT = 0;
     this.ui.setFeverMode(false);
+    if (this.boltQueued && this.state === 'play') this.grantBolt(this.boltQueued === 'return');
+  }
+
+  // ================= 惊雷（闪电球） =================
+  hasBoltInHand() { return this.cur === BOLT || this.next === BOLT; }
+
+  addBolt(amount) {
+    if (CFG.boltNeed <= 0 || this.hasBoltInHand() || this.boltQueued) return;
+    const stageScale = this.endless ? 1 + Math.max(0, this.stage - 10) * 0.03 : 1;
+    const boost = 1 + 0.3 * this.perk('arc');
+    this.boltCharge = Math.min(1, this.boltCharge + (amount * boost) / (CFG.boltNeed * stageScale));
+    if (this.boltCharge >= 1) {
+      if (this.feverT > 0) this.boltQueued = 'charge';
+      else this.grantBolt();
+    }
+  }
+
+  // 引雷符溅爆半径（雷击与瞄准预览共用）
+  arcRadius() { return 70 + 25 * this.perk('arc'); }
+
+  // returned：打空回返的闪电球，只给轻量提示，不重复播放"已满"庆祝
+  grantBolt(returned = false) {
+    this.boltQueued = false;
+    if (this.hasBoltInHand()) return;
+    this.boltCharge = 1;
+    // 若手上正拿着彩珠，放到下一颗位置，不覆盖彩珠
+    if (this.cur === RAINBOW) this.next = BOLT;
+    else this.cur = BOLT;
+    this.updateAmmoView();
+    if (this.shooter) this.shooter.swapT = 1;
+    if (returned) {
+      this.fx.text(this.sx, this.sy - 105, '惊雷回返', { size: 34, fill: ['#ffffff', '#7be8ff'], stroke: '#081c48', dur: 0.9, rise: 35, font: 'brush' });
+      sfx.swap();
+      return;
+    }
+    const { x, y } = this.heldPos();
+    this.fx.ring(x, y, 0x63e8ff, 2.4, 0.55);
+    this.fx.ring(x, y, 0xffffff, 1.3, 0.3);
+    this.fx.burst(x, y, 0x63e8ff, 22, 1.4);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.random() * 0.5;
+      this.fx.bolt(x, y, x + Math.cos(a) * 90, y + Math.sin(a) * 90, 0x63e8ff, 0.3);
+    }
+    this.fx.text(this.sx, this.sy - 115, '惊雷已满', { size: 46, fill: ['#ffffff', '#63e8ff'], stroke: '#081c48', dur: 1.3, rise: 45, font: 'brush' });
+    this.shake(5);
+    sfx.boltReady();
+    buzz(22);
+    if (!this.boltHinted) {
+      this.boltHinted = true;
+      this.ui.hint('闪电球就绪：投中任意颜色清空全场同色（可交换暂存）', 5000);
+    }
+  }
+
+  // gem：命中年兽宝珠（宝珠本身算有效命中，即使场上没有弱点色珠子）
+  boltStrike(x, y, targetColor, comboFire = false, gem = false) {
+    const hitSet = new Set();
+    for (const b of this.allBalls()) {
+      if (this.onBoard(b) && b.color === targetColor) hitSet.add(b);
+    }
+    // 引雷符：命中点额外范围溅爆
+    if (this.perk('arc') > 0) {
+      for (const b of this.ballsNear(x, y, this.arcRadius())) hitSet.add(b);
+    }
+    const hit = [...hitSet];
+    const step = Math.max(1, Math.ceil(hit.length / 26));
+    hit.forEach((b, k) => {
+      if (k % step === 0 || hit.length <= 26) {
+        this.fx.bolt(x, y, b.x, b.y, k % 3 === 0 ? 0xffe25c : 0x63e8ff, 0.48);
+      }
+      this.fx.ring(b.x, b.y, 0x63e8ff, 0.9, 0.32);
+    });
+    this.fx.ring(x, y, 0x63e8ff, 3.2, 0.55);
+    this.fx.ring(x, y, 0xffffff, 1.8, 0.3);
+    this.fx.burst(x, y, 0x63e8ff, 36, 2);
+    this.ui.flash(comboFire ? 'rgba(255,210,130,0.45)' : 'rgba(110,235,255,0.38)');
+    this.shake(comboFire ? 15 : 12);
+    this.punch(0.032);
+    this.setHitStop(0.08);
+    buzz(35);
+    sfx.thunderStrike();
+    // 没劈中任何珠子（如首领关弱点色已清空）：只留雷击效果，不加分不加连击
+    if (!hit.length && !gem) {
+      if (comboFire) this.feverBlast(x, y, 1);
+      return;
+    }
+    this.bumpCombo();
+    this.run.bestCombo = Math.max(this.run.bestCombo, this.shotCombo);
+    this.shooter.joy = 1;
+    const mult = comboFire ? 2 : 1;
+    const pts = Math.round((hit.length * 25 + 60) * this.comboMul() * mult);
+    this.addScore(pts);
+    const ty = clamp(y, 185, 860);
+    this.fx.text(x, ty - 60, comboFire ? '天火雷劫' : '雷霆万钧', {
+      size: comboFire ? 72 : 62,
+      fill: comboFire ? ['#ffffff', '#ffe08a', '#63e8ff'] : ['#ffffff', '#7be8ff', '#2a7bff'],
+      stroke: '#071438', dur: 1.4, rise: 78, font: 'brush',
+    });
+    this.fx.text(x, ty + 20, '+' + pts, { size: 36 + Math.min(hit.length, 10) * 2, fill: ['#ffffff', '#7be8ff'], rise: 66, font: 'num' });
+    if (hit.length) this.destroyBalls(hit, 1, x, y, 'bolt');
+    if (comboFire) this.feverBlast(x, y, 1);
   }
 
   heldPos() {
@@ -1490,7 +1632,7 @@ export class Game {
       const pts = hit.length * 20 * 2;
       this.addScore(pts);
       this.fx.text(x, y, '+' + pts, { size: 34 + Math.min(hit.length, 8) * 2, fill: ['#fffbe6', '#ff9d3c'], font: 'num' });
-      this.destroyBalls(hit, level, x, y);
+      this.destroyBalls(hit, level, x, y, 'fire');
     }
   }
 
@@ -1717,7 +1859,16 @@ export class Game {
   shotHitsBoss(p) {
     const b = this.boss;
     const gp = this.gemPos();
-    if (p.color === b.weak || p.color === RAINBOW) {
+    if (p.bolt) {
+      const dmg = 16 * (this.feverT > 0 ? 2 : 1);
+      this.fx.text(gp.x, gp.y - 44, `-${dmg}`, { size: 60, fill: ['#ffffff', '#63e8ff'], font: 'num', dur: 1.1 });
+      this.run.gemHits++;
+      this.emit('gem');
+      b.attackT += 1.4;
+      this.boltStrike(gp.x, gp.y, b.weak, p.fire, true);
+      this.damageBoss(dmg, true);
+      if (!b.dying) this.setWeak();
+    } else if (p.color === b.weak || p.color === RAINBOW) {
       const dmg = 8 * (this.feverT > 0 ? 2 : 1);
       this.fx.burst(gp.x, gp.y, COLORS[b.weak].tint, 30, 1.6);
       this.fx.ring(gp.x, gp.y, 0xffffff, 2.4, 0.5);
@@ -1856,7 +2007,7 @@ export class Game {
         this.ui.flash('rgba(255,140,60,0.35)');
         sfx.boom();
         pts += hit.length * 10;
-        this.destroyBalls(hit, level, p.x, p.y);
+        this.destroyBalls(hit, level, p.x, p.y, 'power');
         break;
       }
       case 'lightning': {
@@ -1866,7 +2017,9 @@ export class Game {
         this.ui.flash('rgba(255,240,150,0.3)');
         sfx.zap();
         pts += hit.length * 10;
-        this.destroyBalls(hit, level, p.x, p.y);
+        this.destroyBalls(hit, level, p.x, p.y, 'power');
+        // 珠串上的雷光道具同步为惊雷条额外充能
+        if (CFG.boltNeed > 0) this.addBolt(CFG.boltNeed * 0.35);
         break;
       }
       case 'slow':
@@ -1879,7 +2032,8 @@ export class Game {
         sfx.reverse();
         break;
       case 'rainbow':
-        this.cur = RAINBOW;
+        if (this.cur === BOLT) this.next = RAINBOW;
+        else this.cur = RAINBOW;
         this.updateAmmoView();
         this.shooter.swapT = 1;
         this.fx.burst(this.sx, this.sy, 0xffffff, 18, 1.2);
@@ -1910,6 +2064,10 @@ export class Game {
         this.shotHitsBoss(p);
         p.view.destroy({ children: true });
         P.splice(i, 1);
+      } else if (hit && p.bolt) {
+        this.boltStrike(hit.x, hit.y, hit.color, p.fire);
+        p.view.destroy({ children: true });
+        P.splice(i, 1);
       } else if (hit && p.fire) {
         this.feverBlast(hit.x, hit.y, 1);
       } else if (hit) {
@@ -1919,8 +2077,17 @@ export class Game {
       } else if (p.x < -lim || p.x > WORLD + lim || p.y < -lim || p.y > WORLD + lim) {
         p.view.destroy({ children: true });
         P.splice(i, 1);
-        this.breakCombo();
-        if (this.state === 'play') { this.run.misses++; this.emit('miss'); }
+        if (p.bolt && this.state === 'play') {
+          // 闪电球打空自动回返，避免手滑白费充能
+          // 飞行途中已重新攒满（手上或排队中已有闪电球）时，这颗不再归还
+          if (!this.hasBoltInHand() && !this.boltQueued) {
+            if (this.feverT > 0) { this.boltCharge = 1; this.boltQueued = 'return'; }
+            else this.grantBolt(true);
+          }
+        } else {
+          this.breakCombo();
+          if (this.state === 'play') { this.run.misses++; this.emit('miss'); }
+        }
       }
     }
   }
@@ -2094,6 +2261,31 @@ export class Game {
         this.fx.flames(x, y - 6, 1, { speed: 160, spread: 0.5, size: 0.7, life: 0.35 });
         if (Math.random() < 0.4) this.fx.ember(x + (Math.random() - 0.5) * 30, y - 10);
       }
+    } else if (this.cur === BOLT && sh.igniteT <= 0) {
+      // 手持闪电球：青白电晕脉冲 + 跳动小电弧，一眼识别
+      const pulse = 1.12 + 0.06 * Math.sin(this.t * 16);
+      sh.cur.view.scale.set(sh.cur.view.scale.x * pulse);
+      if (sh.cur.glow) {
+        sh.cur.glow.tint = 0x63e8ff;
+        sh.cur.glow.alpha = 0.72 + 0.25 * Math.sin(this.t * 22);
+      }
+      if (Math.random() < 0.35) {
+        const { x, y } = this.heldPos();
+        const a = Math.random() * Math.PI * 2;
+        this.fx._add(TEX.spark, x + Math.cos(a) * 18, y + Math.sin(a) * 18, {
+          tint: Math.random() < 0.5 ? 0xffffff : 0x63e8ff,
+          vx: Math.cos(a) * 90, vy: Math.sin(a) * 90,
+          max: 0.22, s0: 0.34, s1: 0, spin: 10,
+        });
+      }
+      if (Math.random() < 0.14) {
+        const { x, y } = this.heldPos();
+        const a = Math.random() * Math.PI * 2, a2 = a + 1.4 + Math.random() * 1.4;
+        this.fx.bolt(x + Math.cos(a) * 24, y + Math.sin(a) * 24, x + Math.cos(a2) * 24, y + Math.sin(a2) * 24, 0x63e8ff, 0.12);
+      }
+    } else if (sh.igniteT <= 0 && sh.cur.glow) {
+      sh.cur.glow.alpha = 0.55;
+      sh.cur.glow.tint = COLORS[this.cur].tint;
     }
   }
 
@@ -2129,13 +2321,28 @@ export class Game {
       }
     }
     const fire = this.feverT > 0;
-    const tint = fire ? (Math.sin(this.t * 20) > 0 ? 0xff8a2e : 0xffc46a) : COLORS[this.cur].tint;
+    const bolt = this.cur === BOLT;
+    const tint = bolt ? (Math.sin(this.t * 24) > 0 ? 0x63e8ff : 0xffffff)
+      : fire ? (Math.sin(this.t * 20) > 0 ? 0xff8a2e : 0xffc46a) : COLORS[this.cur].tint;
     const phase = (this.t * 60) % 26;
     // 引导点按屏幕像素保底，手机上缩小后也清晰可见
     const dotR = Math.max(3.2, 2.4 / this.scale), ringW = Math.max(3, 2.2 / this.scale);
     for (let d = 26 + phase; d < hitD; d += 26) {
       const a = 0.6 * (1 - (d / hitD) * 0.7);
       g.beginFill(tint, a).drawCircle(x0 + ca * d, y0 + sa * d, dotR).endFill();
+    }
+    if (hit && bolt) {
+      // 闪电球瞄准预览：高亮全场所有将被雷击清空的同色珠
+      const pulse = 0.65 + 0.35 * Math.sin(this.t * 16);
+      const targets = balls.filter((b) => b.color === hit.color);
+      for (const b of targets) {
+        g.lineStyle(0).beginFill(0x63e8ff, 0.2 * pulse).drawCircle(b.x, b.y, R + 6).endFill();
+        g.lineStyle(ringW, 0x8ef4ff, 0.85 * pulse).drawCircle(b.x, b.y, R + 5);
+      }
+      g.lineStyle(ringW * 1.15, 0xffffff, 0.95).drawCircle(hit.x, hit.y, R + 8);
+      if (this.perk('arc') > 0) {
+        g.lineStyle(ringW * 0.7, 0x63e8ff, 0.55).drawCircle(hit.x, hit.y, this.arcRadius());
+      }
     }
     if (hit && fire) {
       // 爆炸范围预览：让人一眼看懂"打到哪炸到哪"
@@ -2144,12 +2351,12 @@ export class Game {
       g.lineStyle(0).beginFill(0xff6a1e, 0.12).drawCircle(hit.x, hit.y, blastR * pulse).endFill();
       g.lineStyle(ringW, 0xffb347, 0.85).drawCircle(hit.x, hit.y, blastR * pulse);
       g.lineStyle(ringW * 0.7, 0xfff0b0, 0.6).drawCircle(hit.x, hit.y, R + 5);
-    } else if (hit) g.lineStyle(ringW, tint, 0.9).drawCircle(hit.x, hit.y, R + 5);
+    } else if (hit && !bolt) g.lineStyle(ringW, tint, 0.9).drawCircle(hit.x, hit.y, R + 5);
     if (hitBoss) {
-      // 瞄准年兽：颜色对得上宝珠时金圈，否则灰圈
-      const b = this.boss, ok = this.cur === b.weak || this.cur === RAINBOW;
+      // 瞄准年兽：颜色对得上宝珠（或彩珠/闪电球）时亮圈，否则灰圈
+      const b = this.boss, ok = this.cur === b.weak || this.cur === RAINBOW || bolt;
       const gp = this.gemPos();
-      g.lineStyle(ok ? 4 : 2, ok ? 0xffd27a : 0x8a86a8, ok ? 0.95 : 0.6).drawCircle(gp.x, gp.y, ok ? 30 + Math.sin(this.t * 10) * 3 : 26);
+      g.lineStyle(ok ? 4 : 2, bolt ? 0x63e8ff : ok ? 0xffd27a : 0x8a86a8, ok ? 0.95 : 0.6).drawCircle(gp.x, gp.y, ok ? 30 + Math.sin(this.t * 10) * 3 : 26);
     }
   }
 

@@ -4,7 +4,7 @@ import { LEVELS, ENDLESS } from './levels.js';
 import { sfx } from './audio.js';
 import { loadCfg } from './config.js';
 import { initDevPanel } from './devpanel.js';
-import { COLORS, RAINBOW, SKINS, SKIN_CANVAS, BALL_CANVAS, TRAIL_CANVAS, SCENE_CANVAS } from './textures.js';
+import { COLORS, RAINBOW, BOLT, SKINS, SKIN_CANVAS, BALL_CANVAS, TRAIL_CANVAS, SCENE_CANVAS } from './textures.js';
 import { store, meta, ACHIEVEMENTS, CHALLENGES, chalState, SHELVES, REVIVE_COST } from './meta.js';
 import { TAL, COMBO_TIERS, BAG_SIZE, CURSE_SPEED, CURSE_SCORE } from './perks.js';
 import { DAILY, dailyLevel, prevDayKey } from './daily.js';
@@ -23,8 +23,8 @@ loadCfg();
 // 等本地字体加载完再显示首页，避免画布上的特效字先用系统字体渲染（最多等 2.5 秒）
 const fontsReady = Promise.race([
   Promise.all([
-    document.fonts.load('48px "Ma Shan Zheng"', '萤灯连珠夜游连锁连击过关灯火燎原将熄炸裂雷光缓行倒流彩珠余光暂停继续重新开始下一关再来一次选择关卡熄灭第一二三四五六七八九十'),
-    document.fonts.load('16px "ZCOOL XiaoWei"', '一夜灯会十二盏连珠成火最高分移动鼠标瞄准左键发射右键空格交换拖动松手轻点灵消除断口同色回吸道具'),
+    document.fonts.load('48px "Ma Shan Zheng"', '萤灯连珠夜游连锁连击过关灯火燎原惊雷天火雷劫将熄炸裂雷光缓行倒流彩珠余光暂停继续重新开始下一关再来一次选择关卡熄灭第一二三四五六七八九十'),
+    document.fonts.load('16px "ZCOOL XiaoWei"', '一夜灯会十二盏连珠成火最高分移动鼠标瞄准左键发射右键空格交换拖动松手轻点灵消除断口同色回吸道具闪电球惊雷'),
     document.fonts.load('800 30px "Cinzel"', '0123456789,+×'),
   ]),
   new Promise((r) => setTimeout(r, 2500)),
@@ -51,6 +51,7 @@ const choiceLocked = () => performance.now() < choiceReadyAt;
 // 触屏交换按钮里的两颗珠：用 CSS 渐变画出与游戏内一致的配色
 const orbBg = (c) => {
   if (c === RAINBOW) return 'conic-gradient(from 30deg, #ff4b5c, #ffc531, #35dc8a, #36b3ff, #c25cf5, #ff4b5c)';
+  if (c === BOLT) return 'radial-gradient(circle at 36% 30%, #ffffff 0 18%, #63e8ff 46%, #2244c8 82%, #0c1248 100%)';
   const k = COLORS[c] || COLORS[0];
   return `radial-gradient(circle at 36% 30%, ${k.light} 0 12%, ${k.hex} 48%, ${k.dark} 100%)`;
 };
@@ -139,6 +140,16 @@ const ui = {
     this._fev = v;
     $('feverBar').style.width = (v * 100).toFixed(1) + '%';
     $('feverBox').classList.toggle('ready', !active && v > 0.85);
+  },
+  _bolt: -1,
+  _boltReady: false,
+  setBolt(v, ready) {
+    v = Math.min(1, v);
+    if (Math.abs(v - this._bolt) < 0.004 && ready === this._boltReady) return;
+    this._bolt = v;
+    this._boltReady = ready;
+    $('boltBar').style.width = (v * 100).toFixed(1) + '%';
+    $('boltBox').classList.toggle('ready', ready || v > 0.85);
   },
   setFeverMode(on) { document.body.classList.toggle('fever', on); },
   flash(color) {
@@ -444,7 +455,7 @@ const ui = {
         <div class="lantern-map">${rows.join('')}</div>
         ${dailyHtml()}
         <button class="endless-btn" data-act="play" data-lv="-1">
-          <span class="e-title">无尽模式 · ${meta.scene().name}</span>
+          <span class="e-title">无尽模式<i class="e-sep">·</i>${meta.scene().name}</span>
           <span class="e-sub">${store.get('endlessBest', 0) ? `最高分 <b>${store.get('endlessBest', 0).toLocaleString()}</b> · 最远${stageLabel(store.get('endlessStage', 1))}` : '珠串永不停歇，可在灯坊更换夜境场景'}</span>
         </button>
         <div class="menu-tabs">

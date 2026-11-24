@@ -1,8 +1,9 @@
 // 无尽模式「灯符」：每升一重从三张里选一张，效果可叠加
 // max：最多叠几层；w：出现权重；rare：稀有（金边）；once：一次性效果，不占层数
 export const TALISMANS = [
-  { id: 'blaze', ch: '焰', name: '烈焰符', desc: (l) => `燎原积攒速度 +${30 * l}%`, max: 3, w: 10 },
+  { id: 'blaze', ch: '焰', name: '烈焰符', desc: (l) => `燎原积攒速度 +${25 * l}%`, max: 3, w: 10 },
   { id: 'ember', ch: '燃', name: '久燃符', desc: (l) => `每次燎原多 ${2 * l} 发火珠`, max: 3, w: 8 },
+  { id: 'arc', ch: '惊', name: '引雷符', desc: (l) => `惊雷充能 +${30 * l}%，闪电球额外炸开周围珠子`, max: 3, w: 9 },
   { id: 'prism', ch: '虹', name: '虹光符', desc: (l) => `每 ${prismEvery(l)} 发必出一颗彩珠`, max: 3, w: 8 },
   { id: 'chain', ch: '环', name: '连环符', desc: (l) => `连锁得分 +${50 * l}%`, max: 3, w: 9 },
   { id: 'calm', ch: '稳', name: '沉稳符', desc: (l) => `珠串推进速度 -${10 * l}%`, max: 2, w: 9 },

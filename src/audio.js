@@ -188,6 +188,20 @@ export const sfx = {
   boom() { noise(0.5, 0.5, 300); noise(0.25, 0.25, 1200); tone(140, 0.45, 'sine', 0.45, 40); },
   blast() { noise(0.3, 0.3, 500); tone(180, 0.25, 'sine', 0.25, 60); },
   zap() { noise(0.3, 0.25, 5000); tone(1800, 0.25, 'sawtooth', 0.06, 300); tone(900, 0.2, 'square', 0.05, 2400, 0.05); },
+  // 惊雷充满：清脆上扬的电音和弦 + 轻微电流声
+  boltReady() {
+    noise(0.18, 0.14, 6200);
+    [5, 7, 9].forEach((n, k) => tone(PENTA[n], 0.26, 'triangle', 0.12, 0, k * 0.045));
+    tone(1320, 0.22, 'sawtooth', 0.04, 2640, 0.04);
+  },
+  // 闪电球命中：厚重雷鸣 + 高频电弧撕裂
+  thunderStrike() {
+    noise(0.55, 0.42, 420);
+    noise(0.35, 0.3, 5400);
+    tone(150, 0.48, 'sine', 0.38, 42);
+    tone(2200, 0.28, 'sawtooth', 0.075, 260);
+    tone(1100, 0.22, 'square', 0.055, 2800, 0.04);
+  },
   slow() { tone(880, 0.6, 'sine', 0.16, 330); tone(660, 0.6, 'triangle', 0.06, 250, 0.08); },
   reverse() { tone(300, 0.5, 'sine', 0.16, 900); noise(0.4, 0.08, 800); },
   rainbow() { [4, 5, 6, 7, 8, 9].forEach((n, k) => tone(PENTA[n], 0.3, 'sine', 0.1, 0, k * 0.05)); },

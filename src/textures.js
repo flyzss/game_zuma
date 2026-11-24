@@ -10,8 +10,11 @@ export const COLORS = [
   { hex: '#c25cf5', light: '#f3dcff', dark: '#4a0f78', tint: 0xc25cf5, sym: 'star' },
   // 彩珠：只作为发射物出现，插入时变成被击中珠子的颜色
   { hex: '#ffffff', light: '#ffffff', dark: '#5a4a8a', tint: 0xffffff, sym: 'rainbow' },
+  // 闪电球：只作为发射物出现，击中任意颜色后雷击清空场上所有同色珠
+  { hex: '#63e8ff', light: '#ffffff', dark: '#10307a', tint: 0x63e8ff, sym: 'bolt' },
 ];
 export const RAINBOW = 5;
+export const BOLT = 6;
 
 // 道具：随机附着在珠串上的珠子，限时，消除该珠即触发
 export const POWERS = {
@@ -94,6 +97,59 @@ function rainbowBallTex() {
   g.shadowColor = '#7a4cff'; g.shadowBlur = 8;
   g.fillStyle = '#ffffff';
   poly(g, 4, 30, -Math.PI / 2, 9); g.fill();
+  g.restore();
+  return PIXI.Texture.from(c);
+}
+
+// 惊雷：闪电球（青蓝电浆球 + 缠绕电弧 + 居中闪电纹章）
+function boltBallTex() {
+  const S = 128, C = 64, r = 60;
+  const [c, g] = canvas(S, S);
+  const gr = g.createRadialGradient(C - 10, C - 12, 2, C, C, r);
+  gr.addColorStop(0, '#ffffff');
+  gr.addColorStop(0.22, '#bdf8ff');
+  gr.addColorStop(0.52, '#34c6ff');
+  gr.addColorStop(0.82, '#2244c8');
+  gr.addColorStop(1, '#0c1248');
+  g.fillStyle = gr;
+  g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.fill();
+
+  // 球面内部缠绕的锯齿电弧
+  g.save();
+  g.beginPath(); g.arc(C, C, r - 2, 0, Math.PI * 2); g.clip();
+  g.globalCompositeOperation = 'lighter';
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  const arcs = [
+    [[14, 42], [32, 34], [46, 52], [68, 36], [92, 48], [114, 32]],
+    [[16, 86], [40, 74], [58, 92], [82, 76], [112, 88]],
+    [[34, 14], [48, 40], [32, 66], [50, 96], [38, 116]],
+    [[92, 16], [78, 44], [96, 70], [80, 102]],
+  ];
+  for (const pts of arcs) {
+    for (const [w, st] of [[6, 'rgba(99,232,255,0.45)'], [2.2, 'rgba(255,255,255,0.88)']]) {
+      g.lineWidth = w; g.strokeStyle = st;
+      g.beginPath();
+      pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+      g.stroke();
+    }
+  }
+  g.restore();
+
+  // 外缘深蓝勾边 + 内圈青白亮边
+  g.strokeStyle = 'rgba(8,20,76,0.85)'; g.lineWidth = 3;
+  g.beginPath(); g.arc(C, C, r - 1.5, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = 'rgba(155,244,255,0.85)'; g.lineWidth = 2.4;
+  g.beginPath(); g.arc(C, C, r - 5, 0, Math.PI * 2); g.stroke();
+
+  // 居中发光闪电符号
+  g.save();
+  g.translate(C, C);
+  g.shadowColor = '#63e8ff'; g.shadowBlur = 14;
+  g.fillStyle = '#ffffff';
+  g.beginPath();
+  g.moveTo(7, -34); g.lineTo(-17, 4); g.lineTo(-2, 4); g.lineTo(-9, 34); g.lineTo(18, -5); g.lineTo(2, -5);
+  g.closePath();
+  g.fill();
   g.restore();
   return PIXI.Texture.from(c);
 }
@@ -590,6 +646,7 @@ function drawPlushStyle(g, C, r, col, style, idx) {
 
 function ballTex(col, style = 'classic', idx = 0) {
   if (col.sym === 'rainbow') return rainbowBallTex();
+  if (col.sym === 'bolt') return boltBallTex();
   const S = 128, C = 64, r = 60;
   const [c, g] = canvas(S, S);
   const sk = BALL_SKINS.find((b) => b.id === style);
@@ -1334,7 +1391,13 @@ function flameTex() {
 
 export function buildTextures() {
   TEX.ballSets = {};
-  for (const sk of BALL_SKINS) TEX.ballSets[sk.id] = COLORS.map((col, i) => ballTex(col, sk.id, i));
+  // 彩珠/闪电球与皮肤无关：只生成一次，各皮肤共用同一纹理
+  const shared = {};
+  for (const sk of BALL_SKINS) {
+    TEX.ballSets[sk.id] = COLORS.map((col, i) => (col.sym === 'rainbow' || col.sym === 'bolt'
+      ? (shared[i] ||= ballTex(col, sk.id, i))
+      : ballTex(col, sk.id, i)));
+  }
   TEX.balls = TEX.ballSets.classic;
   TEX.petal = petalTex();
   for (const t of TRAILS) trailPreview(t);

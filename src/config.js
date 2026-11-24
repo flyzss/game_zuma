@@ -29,10 +29,13 @@ export const PARAMS = [
   { key: 'reverseSpeed', label: '倒流速度', def: 140, min: 40, max: 400, step: 10 },
 
   { group: '灯火燎原（Fever）' },
-  { key: 'feverNeed', label: '充满所需消除数', def: 50, min: 10, max: 120, step: 2 },
+  { key: 'feverNeed', label: '充满所需消除数', def: 78, min: 20, max: 160, step: 2 },
   { key: 'feverShots', label: '火珠数量', def: 6, min: 2, max: 30, step: 1 },
   { key: 'feverTime', label: '最长持续(秒)', def: 10, min: 3, max: 20, step: 0.5 },
   { key: 'feverBlast', label: '火珠爆炸半径', def: 100, min: 0, max: 220, step: 5 },
+
+  { group: '惊雷（闪电球）' },
+  { key: 'boltNeed', label: '充满所需消除数', def: 32, min: 10, max: 100, step: 2 },
 
   { group: '声音' },
   { key: 'musicVol', label: '背景音乐音量', def: 0.6, min: 0, max: 1.5, step: 0.05 },
