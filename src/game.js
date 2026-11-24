@@ -24,7 +24,8 @@ const buzz = (ms) => {
   lastBuzz = now;
   try { navigator.vibrate(ms); } catch { /* 忽略 */ }
 };
-const IGNITE_TIME = 0.4;     // 燎原触发后"蓄火"到"点燃"的时长
+const EMBER_TIME = 0.5;      // 计数火珠打完后的"余焰"时长：期间连点仍是火珠
+const IGNITE_TIME = 0.4;    // 燎原触发后"蓄火"到"点燃"的时长
 const MUZZLE = 80;          // 手持珠距主角中心距离
 const EPS = 1.5;
 const RAMP_TIME = 55;        // 关内加速达到最大值所需秒数
@@ -846,7 +847,7 @@ export class Game {
     const p = {
       color: this.cur, x: this.sx + dx * MUZZLE, y: this.sy + dy * MUZZLE,
       vx: dx * CFG.shotSpeed * (1 + 0.25 * this.perk('swift')), vy: dy * CFG.shotSpeed * (1 + 0.25 * this.perk('swift')), view: v.view, body: v.body,
-      fire: this.feverT > 0 && this.feverShots > 0,   // 灯火燎原：火珠，打到哪炸到哪
+      fire: this.feverT > 0,   // 灯火燎原：火珠，打到哪炸到哪（含计数打完后的余焰收尾）
     };
     if (p.fire) {
       this.addFireLayer(v);
@@ -860,8 +861,16 @@ export class Game {
       this.fx.ring(p.x, p.y, 0xff7a2e, 1.4, 0.28);
       this.shake(4);
       this.feverShots--;
-      this.fx.text(this.sx, this.sy - 110, this.feverShots > 0 ? `火珠 ×${this.feverShots}` : '火珠用尽', { size: 34, fill: ['#fffbe6', '#ff9d3c'], stroke: '#3a0a02', dur: 0.7, rise: 40, font: 'brush' });
-      if (this.feverShots <= 0) this.feverT = Math.min(this.feverT, 0.5);
+      if (this.feverShots > 0) {
+        this.fx.text(this.sx, this.sy - 110, `火珠 ×${this.feverShots}`, { size: 34, fill: ['#fffbe6', '#ff9d3c'], stroke: '#3a0a02', dur: 0.7, rise: 40, font: 'brush' });
+      } else if (this.feverShots === 0) {
+        // 计数火珠打完：进入余焰，短时间内连点仍是火珠，奖励手快的玩家
+        this.feverT = Math.min(this.feverT, EMBER_TIME);
+        this.fx.text(this.sx, this.sy - 120, '余焰 · 快连点', { size: 42, fill: ['#fffbe6', '#ff6a2e'], stroke: '#3a0a02', dur: 0.8, rise: 40, font: 'brush' });
+        this.fx.ring(this.sx, this.sy, 0xff5a1e, 3, 0.4);
+      } else {
+        this.fx.text(this.sx + (Math.random() - 0.5) * 80, this.sy - 100, '余焰', { size: 30, fill: ['#fffbe6', '#ff8a3c'], stroke: '#3a0a02', dur: 0.5, rise: 50, font: 'brush' });
+      }
     }
     v.view.position.set(p.x, p.y);
     this.projLayer.addChild(v.view);
@@ -2058,8 +2067,10 @@ export class Game {
         if (sh.cur.glow) { sh.cur.glow.alpha = 0.55; sh.cur.glow.tint = COLORS[this.cur].tint; }
       }
     }
-    const curOn = fever && sh.igniteT <= 0 && this.feverShots > 0;
-    const nextOn = curOn && this.feverShots > 1;
+    // 余焰阶段（计数火珠打完后的收尾）手上仍是火珠，只是火光急促闪烁，提示快要熄灭
+    const ember = this.feverShots <= 0;
+    const curOn = fever && sh.igniteT <= 0;
+    const nextOn = curOn && (this.feverShots > 1 || ember);
     if (sh.fireA > 0.5 && !curOn && sh.igniteT <= 0) {
       const { x, y } = this.heldPos();
       this.fx.smoke(x, y, 8, 1);
@@ -2071,7 +2082,7 @@ export class Game {
     for (const [v, a] of [[sh.cur, sh.fireA], [sh.next, sh.nextFireA]]) {
       v.fire.f.visible = a > 0.01;
       if (!v.fire.f.visible) continue;
-      v.fire.f.alpha = a;
+      v.fire.f.alpha = a * (ember && fever ? 0.65 + 0.35 * Math.sin(this.t * 38) : 1);
       this.animateFire(v.fire, -Math.PI / 2, dt);
     }
     if (sh.fireA > 0) {
@@ -2117,7 +2128,7 @@ export class Game {
         if (dx * dx + dy * dy < r2) { hitD = d; hit = b; break outer; }
       }
     }
-    const fire = this.feverT > 0 && this.feverShots > 0;
+    const fire = this.feverT > 0;
     const tint = fire ? (Math.sin(this.t * 20) > 0 ? 0xff8a2e : 0xffc46a) : COLORS[this.cur].tint;
     const phase = (this.t * 60) % 26;
     // 引导点按屏幕像素保底，手机上缩小后也清晰可见
