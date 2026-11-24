@@ -43,6 +43,10 @@ buildTextures();
 const isTouch = matchMedia('(pointer: coarse)').matches;
 document.body.classList.toggle('touch', isTouch);
 let hintTimer = 0;
+// 灵符弹窗出现后先锁一会儿：防止玩家正连点发射时，误点到还没看清的灵符
+const CHOICE_LOCK_MS = 1200;
+let choiceReadyAt = 0;
+const choiceLocked = () => performance.now() < choiceReadyAt;
 
 // 触屏交换按钮里的两颗珠：用 CSS 渐变画出与游戏内一致的配色
 const orbBg = (c) => {
@@ -186,7 +190,7 @@ const ui = {
   },
 
   // 无尽模式：三选一灵符（choices 来自 rollTalismans）
-  showChoice(list, perks, stage) {
+  showChoice(list, perks, stage, lock = true) {
     const owned = Object.keys(perks).filter((k) => perks[k] > 0).length;
     const cards = list.map((c, k) => {
       const t = c.t;
@@ -203,13 +207,24 @@ const ui = {
         ${isTouch ? '' : `<kbd>${k + 1}</kbd>`}
       </button>`;
     }).join('');
+    choiceReadyAt = lock ? performance.now() + CHOICE_LOCK_MS : 0;
     this.show(`
-      <div class="choose">
+      <div class="choose ${lock ? 'locked' : ''}" style="--lock:${CHOICE_LOCK_MS}ms">
         <div class="ch-head"><span class="ch-stage">${stageLabel(stage)}</span><h2>择一道灵符</h2>
           <p>灵符囊 <b>${owned} / ${BAG_SIZE}</b> 格 · 已有的灵符可继续升层，囊满后新灵符要替换旧的</p></div>
         <div class="tl-row">${cards}</div>
+        <div class="tl-lock"><i></i><span>${lock ? '细看灵符…' : '请择一道'}</span></div>
         ${perkStrip(perks)}
       </div>`);
+    if (lock) {
+      clearTimeout(this._choiceT);
+      this._choiceT = setTimeout(() => {
+        const el = $('screen').querySelector('.choose.locked');
+        if (!el) return;
+        el.classList.remove('locked');
+        el.querySelector('.tl-lock span').textContent = '请择一道';
+      }, CHOICE_LOCK_MS);
+    }
   },
 
   // 囊满时选了新灵符：挑一道旧符舍弃
@@ -839,13 +854,14 @@ $('screen').addEventListener('click', (e) => {
     const got = meta.buy(b.dataset.kind, b.dataset.skin);
     if (got) { applySkin(); sfx.rainbow(); ui.showShop(); got.forEach(toast); }
   } else if (act === 'perk') {
+    if (choiceLocked()) return;
     const k = +b.dataset.k;
     if (game.choices?.[k]?.swap) ui.showSwap(k);
     else game.pickPerk(k);
   } else if (act === 'perkswap') {
     game.pickPerk(+b.dataset.k, b.dataset.old);
   } else if (act === 'perkback') {
-    ui.showChoice(game.choices, game.perks, game.stage);
+    ui.showChoice(game.choices, game.perks, game.stage, false);
   } else if (act === 'equip') {
     if (meta.equip(b.dataset.kind, b.dataset.skin)) { applySkin(); sfx.powerAppear(); ui.showShop(); }
   } else if (act === 'shoptab') {
@@ -882,7 +898,7 @@ document.addEventListener('pointerdown', () => sfx.unlock(), { capture: true });
 window.addEventListener('keydown', (e) => {
   if (game.state !== 'choose' || !game.choices) return;
   const k = +e.key;
-  if (k >= 1 && k <= game.choices.length && $('screen').querySelector('.talisman')) {
+  if (k >= 1 && k <= game.choices.length && $('screen').querySelector('.talisman') && !choiceLocked()) {
     sfx.swap();
     if (game.choices[k - 1].swap) ui.showSwap(k - 1);
     else game.pickPerk(k - 1);

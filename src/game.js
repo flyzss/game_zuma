@@ -24,6 +24,7 @@ const buzz = (ms) => {
   lastBuzz = now;
   try { navigator.vibrate(ms); } catch { /* 忽略 */ }
 };
+const IGNITE_TIME = 0.4;     // 燎原触发后"蓄火"到"点燃"的时长
 const MUZZLE = 80;          // 手持珠距主角中心距离
 const EPS = 1.5;
 const RAMP_TIME = 55;        // 关内加速达到最大值所需秒数
@@ -226,7 +227,13 @@ export class Game {
   // 弹道拖尾：燎原时统一是火焰，平时按装备的样式
   emitTrail(p) {
     const fx = this.fx, x = p.x, y = p.y;
-    if (this.feverT > 0) { fx.trail(x, y, 0xff9a3c, 1.6); return; }
+    if (p.fire) {
+      fx.trail(x, y, 0xff6a1e, 2.6);
+      fx.trail(x, y, 0xffe08a, 1.1);
+      fx.flames(x, y, 2, { ang: Math.atan2(-p.vy, -p.vx), spread: 0.35, speed: 240, size: 0.95, life: 0.32 });
+      if (Math.random() < 0.7) fx.ember(x + (Math.random() - 0.5) * 22, y + (Math.random() - 0.5) * 22);
+      return;
+    }
     const tint = COLORS[p.color].tint;
     switch (this.trailId) {
       case 'firefly':
@@ -645,7 +652,44 @@ export class Game {
     const cur = this.makeBallView(0, true);
     c.addChild(halo, ring, body, cur.view);
     this.shooterLayer.addChild(c);
-    this.shooter = { c, halo, ring, body, eyes, lantern, cur, next, recoil: 0, swapT: 0, transferT: 0, joy: 0, blink: 2 };
+    this.addFireLayer(cur);
+    this.addFireLayer(next);
+    this.shooter = { c, halo, ring, body, eyes, lantern, cur, next, recoil: 0, swapT: 0, transferT: 0, joy: 0, blink: 2, fireA: 0, nextFireA: 0, igniteT: 0, popT: 0 };
+  }
+
+  // 火珠外观：橙色光晕 + 一簇跳动的火舌 + 熔岩珠面，盖在普通珠子上，平时隐藏
+  addFireLayer(v) {
+    const f = new PIXI.Container();
+    const add = (tex, ay = 0.5) => {
+      const s = new PIXI.Sprite(tex);
+      s.anchor.set(0.5, ay); s.blendMode = PIXI.BLEND_MODES.ADD;
+      return s;
+    };
+    const aura = add(TEX.glow); aura.tint = 0xff5a14; aura.scale.set((D * 4.4) / 128);
+    const tongues = [];
+    for (let i = 0; i < 7; i++) tongues.push(add(TEX.flame, 0.77));
+    const orb = new PIXI.Sprite(TEX.fireOrb); orb.anchor.set(0.5); orb.scale.set(D / 120);
+    const core = add(TEX.glow); core.tint = 0xfff2c0; core.scale.set((D * 1.2) / 128);
+    f.addChild(aura, ...tongues, orb, core);
+    f.visible = false;
+    v.view.addChild(f);
+    v.fire = { f, aura, tongues, orb, core, seed: Math.random() * 10 };
+  }
+
+  // 火舌朝 ang 方向（持在手上时朝上，飞行时朝后）摇曳
+  animateFire(fire, ang, dt) {
+    const t = this.t, n = fire.tongues.length, k = D / 38;
+    fire.tongues.forEach((s, i) => {
+      const off = (i - (n - 1) / 2) / ((n - 1) / 2);
+      const fl = 0.8 + 0.22 * Math.sin(t * 17 + i * 1.9 + fire.seed) + 0.12 * Math.sin(t * 31 + i * 3.3);
+      s.rotation = ang + Math.PI / 2 + off * 0.8 + Math.sin(t * 9 + i * 2.4) * 0.14;
+      s.scale.set(k * (0.95 - Math.abs(off) * 0.25), k * fl * (1.15 - Math.abs(off) * 0.5));
+      s.alpha = 0.9 - Math.abs(off) * 0.25;
+    });
+    fire.aura.alpha = 0.95 + 0.05 * Math.sin(t * 13 + fire.seed);
+    fire.aura.scale.set(((D * 4.4) / 128) * (1 + 0.08 * Math.sin(t * 7)));
+    fire.core.alpha = 0.45 + 0.3 * Math.sin(t * 23 + fire.seed);
+    fire.orb.rotation += dt * 2.5;
   }
 
   makeBallView(color, innerGlow = false) {
@@ -802,10 +846,19 @@ export class Game {
     const p = {
       color: this.cur, x: this.sx + dx * MUZZLE, y: this.sy + dy * MUZZLE,
       vx: dx * CFG.shotSpeed * (1 + 0.25 * this.perk('swift')), vy: dy * CFG.shotSpeed * (1 + 0.25 * this.perk('swift')), view: v.view, body: v.body,
-      fire: this.feverT > 0,   // 灯火燎原：火珠，打到哪炸到哪
+      fire: this.feverT > 0 && this.feverShots > 0,   // 灯火燎原：火珠，打到哪炸到哪
     };
     if (p.fire) {
-      v.view.scale.set(1.25); v.body.tint = 0xffc070;
+      this.addFireLayer(v);
+      p.fireV = v.fire;
+      v.fire.f.visible = true;
+      v.glow.tint = 0xff6a1e;
+      v.view.scale.set(1.35);
+      // 炮口喷火
+      this.fx.flames(p.x, p.y, 12, { ang: this.aimAng, spread: 0.45, speed: 760, size: 1.1, life: 0.32 });
+      this.fx._add(TEX.glow, p.x, p.y, { tint: 0xff8a2e, max: 0.22, s0: 1.4, s1: 2.6, a0: 0.9 });
+      this.fx.ring(p.x, p.y, 0xff7a2e, 1.4, 0.28);
+      this.shake(4);
       this.feverShots--;
       this.fx.text(this.sx, this.sy - 110, this.feverShots > 0 ? `火珠 ×${this.feverShots}` : '火珠用尽', { size: 34, fill: ['#fffbe6', '#ff9d3c'], stroke: '#3a0a02', dur: 0.7, rise: 40, font: 'brush' });
       if (this.feverShots <= 0) this.feverT = Math.min(this.feverT, 0.5);
@@ -1348,6 +1401,7 @@ export class Game {
     this.setHitStop(0.12);
     this.ui.flash('rgba(255,170,60,0.55)');
     this.ui.setFeverMode(true);
+    this.chargeFire();
     this.fx.text(500, 540, `火珠 ×${this.feverShots} · 打哪炸哪`, { size: 44, fill: ['#fffbe6', '#ffb02e'], stroke: '#3a0a02', dur: 2, rise: 20, font: 'brush' });
     sfx.fever();
   }
@@ -1357,6 +1411,58 @@ export class Game {
     this.ui.setFeverMode(false);
   }
 
+  heldPos() {
+    const sh = this.shooter;
+    return { x: this.sx + sh.cur.view.x, y: this.sy + sh.cur.view.y };
+  }
+
+  // 蓄火：四周的火舌与火星盘旋着被吸进手上的珠子
+  chargeFire() {
+    const sh = this.shooter;
+    if (!sh) return;
+    sh.igniteT = IGNITE_TIME;
+    const { x, y } = this.heldPos();
+    const n = Math.round(30 * CFG.particles);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, d = 170 + Math.random() * 170;
+      const max = IGNITE_TIME * (0.75 + Math.random() * 0.25);
+      const sx = x + Math.cos(a) * d, sy = y + Math.sin(a) * d;
+      // 带一点切向速度，看起来像旋涡
+      const tx = -Math.sin(a) * 120, ty = Math.cos(a) * 120;
+      const flame = i % 3 !== 0;
+      this.fx._add(flame ? TEX.flame : TEX.spark, sx, sy, {
+        tint: Math.random() < 0.5 ? 0xffc46a : 0xff6a2e,
+        rot: flame ? a - Math.PI / 2 : 0,
+        vx: (x - sx) / max + tx, vy: (y - sy) / max + ty,
+        max, s0: flame ? 0.9 : 0.6, s1: 0.25, a0: 0.95, spin: flame ? 0 : 8,
+      });
+    }
+    this.fx._add(TEX.glow, x, y, { tint: 0xff8a2e, max: IGNITE_TIME, s0: 0.4, s1: 2.2, a0: 0.9 });
+  }
+
+  // 点燃：白闪 + 三层冲击波 + 火舌四射，珠子"嘭"地变成火珠
+  igniteBurst() {
+    const sh = this.shooter;
+    sh.popT = 1;
+    const { x, y } = this.heldPos();
+    const fx = this.fx;
+    fx._add(TEX.glow, x, y, { tint: 0xffffff, max: 0.28, s0: 1.6, s1: 4.4, a0: 1 });
+    fx._add(TEX.glow, x, y, { tint: 0xff6a1e, max: 0.7, s0: 2.4, s1: 7, a0: 0.85 });
+    fx.ring(x, y, 0xfff0b0, 2.6, 0.35);
+    fx.ring(x, y, 0xff7a2e, 4.2, 0.6);
+    fx.ring(x, y, 0xff3d1e, 6.5, 0.9);
+    fx.flames(x, y, 26, { spread: Math.PI, speed: 680, size: 1.35, life: 0.65 });
+    fx.burst(x, y, 0xffb347, 34, 2, true);
+    for (let i = 0; i < 14; i++) fx.ember(x + (Math.random() - 0.5) * 90, y + (Math.random() - 0.5) * 60);
+    // 下一颗也跟着点燃
+    if (this.feverShots > 1) fx.flames(this.sx, this.sy + 72, 8, { spread: Math.PI, speed: 300, size: 0.7, life: 0.4 });
+    this.shake(12);
+    this.punch(0.02);
+    this.ui.flash('rgba(255,120,40,0.4)');
+    buzz(40);
+    sfx.blast();
+  }
+
   feverBlast(x, y, level) {
     const blastR = CFG.feverBlast * (1 + 0.2 * this.perk('thunder'));
     const hit = this.ballsNear(x, y, blastR);
@@ -1364,6 +1470,8 @@ export class Game {
     this.fx.burst(x, y, 0xffe08a, 14, 1.1, true);
     this.fx.ring(x, y, 0xffb347, blastR / 80, 0.45);
     this.fx.ring(x, y, 0xffffff, blastR / 130, 0.25);
+    this.fx._add(TEX.glow, x, y, { tint: 0xff5a14, max: 0.4, s0: blastR / 55, s1: blastR / 38, a0: 0.75 });
+    this.fx.flames(x, y, 12, { spread: Math.PI, speed: 560, size: 1.15, life: 0.5 });
     this.shake(9);
     this.punch(0.025);
     this.setHitStop(0.04);
@@ -1787,6 +1895,7 @@ export class Game {
       }
       p.view.position.set(p.x, p.y);
       p.body.rotation += dt * 14;
+      if (p.fireV) this.animateFire(p.fireV, Math.atan2(-p.vy, -p.vx), dt * 4);
       this.emitTrail(p);
       if (hitBoss) {
         this.shotHitsBoss(p);
@@ -1910,6 +2019,7 @@ export class Game {
     sh.cur.view.scale.set(0.5 + 0.5 * p + sh.swapT * 0.2);
     sh.cur.body.rotation += dt * 1.5;
     sh.next.view.scale.set(0.5 * easeOut(1 - sh.transferT) + sh.swapT * 0.2);
+    this.updateHeldFire(dt);
 
     // 眼睛：看向瞄准方向；开心时眯眼，危险时睁大，偶尔眨眼
     sh.blink -= dt;
@@ -1927,6 +2037,51 @@ export class Game {
       } else {
         e.lineStyle(0).beginFill(0x3a1608).drawEllipse(x, y, 6 * big, 8 * big).endFill();
         e.beginFill(0xffffff).drawCircle(x - 2, y - 3, 2.2 * big).endFill();
+      }
+    }
+  }
+
+  // 燎原时手上的珠子化作火珠：蓄火 → 点燃 → 燃烧 → 用尽后冒烟熄灭
+  updateHeldFire(dt) {
+    const sh = this.shooter;
+    const fever = this.feverT > 0;
+    if (sh.igniteT > 0) {
+      sh.igniteT -= this.hitStop > 0 ? dt * 0.1 : dt;
+      // 蓄火中：珠子颤动、越来越亮
+      const k = 1 - Math.max(0, sh.igniteT) / IGNITE_TIME;
+      sh.cur.view.x += (Math.random() - 0.5) * k * 7;
+      sh.cur.view.y += (Math.random() - 0.5) * k * 7;
+      sh.cur.view.scale.set(sh.cur.view.scale.x * (1 + k * 0.25));
+      if (sh.cur.glow) { sh.cur.glow.tint = lerpColor(COLORS[this.cur].tint, 0xff7a2e, k); sh.cur.glow.alpha = 0.55 + k * 0.45; }
+      if (sh.igniteT <= 0) {
+        if (fever) this.igniteBurst();
+        if (sh.cur.glow) { sh.cur.glow.alpha = 0.55; sh.cur.glow.tint = COLORS[this.cur].tint; }
+      }
+    }
+    const curOn = fever && sh.igniteT <= 0 && this.feverShots > 0;
+    const nextOn = curOn && this.feverShots > 1;
+    if (sh.fireA > 0.5 && !curOn && sh.igniteT <= 0) {
+      const { x, y } = this.heldPos();
+      this.fx.smoke(x, y, 8, 1);
+      this.fx.flames(x, y, 6, { speed: 200, size: 0.6, life: 0.35 });
+    }
+    sh.fireA = curOn ? 1 : Math.max(0, sh.fireA - dt * 6);
+    sh.nextFireA = nextOn ? Math.min(1, sh.nextFireA + dt * 8) : Math.max(0, sh.nextFireA - dt * 6);
+    sh.popT = Math.max(0, sh.popT - dt * 3.2);
+    for (const [v, a] of [[sh.cur, sh.fireA], [sh.next, sh.nextFireA]]) {
+      v.fire.f.visible = a > 0.01;
+      if (!v.fire.f.visible) continue;
+      v.fire.f.alpha = a;
+      this.animateFire(v.fire, -Math.PI / 2, dt);
+    }
+    if (sh.fireA > 0) {
+      // 点燃那一下"嘭"地胀大再回弹；燃烧中整体大一圈
+      const pop = sh.popT > 0 ? Math.sin(sh.popT * Math.PI) * 0.9 * sh.popT + sh.popT * 0.3 : 0;
+      sh.cur.view.scale.set(sh.cur.view.scale.x * (1 + 0.25 * sh.fireA + pop));
+      if (Math.random() < 0.6) {
+        const { x, y } = this.heldPos();
+        this.fx.flames(x, y - 6, 1, { speed: 160, spread: 0.5, size: 0.7, life: 0.35 });
+        if (Math.random() < 0.4) this.fx.ember(x + (Math.random() - 0.5) * 30, y - 10);
       }
     }
   }
@@ -1962,7 +2117,8 @@ export class Game {
         if (dx * dx + dy * dy < r2) { hitD = d; hit = b; break outer; }
       }
     }
-    const tint = COLORS[this.cur].tint;
+    const fire = this.feverT > 0 && this.feverShots > 0;
+    const tint = fire ? (Math.sin(this.t * 20) > 0 ? 0xff8a2e : 0xffc46a) : COLORS[this.cur].tint;
     const phase = (this.t * 60) % 26;
     // 引导点按屏幕像素保底，手机上缩小后也清晰可见
     const dotR = Math.max(3.2, 2.4 / this.scale), ringW = Math.max(3, 2.2 / this.scale);
@@ -1970,7 +2126,14 @@ export class Game {
       const a = 0.6 * (1 - (d / hitD) * 0.7);
       g.beginFill(tint, a).drawCircle(x0 + ca * d, y0 + sa * d, dotR).endFill();
     }
-    if (hit) g.lineStyle(ringW, tint, 0.9).drawCircle(hit.x, hit.y, R + 5);
+    if (hit && fire) {
+      // 爆炸范围预览：让人一眼看懂"打到哪炸到哪"
+      const blastR = CFG.feverBlast * (1 + 0.2 * this.perk('thunder'));
+      const pulse = 1 + Math.sin(this.t * 12) * 0.04;
+      g.lineStyle(0).beginFill(0xff6a1e, 0.12).drawCircle(hit.x, hit.y, blastR * pulse).endFill();
+      g.lineStyle(ringW, 0xffb347, 0.85).drawCircle(hit.x, hit.y, blastR * pulse);
+      g.lineStyle(ringW * 0.7, 0xfff0b0, 0.6).drawCircle(hit.x, hit.y, R + 5);
+    } else if (hit) g.lineStyle(ringW, tint, 0.9).drawCircle(hit.x, hit.y, R + 5);
     if (hitBoss) {
       // 瞄准年兽：颜色对得上宝珠时金圈，否则灰圈
       const b = this.boss, ok = this.cur === b.weak || this.cur === RAINBOW;

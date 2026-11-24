@@ -809,6 +809,15 @@ body.boss #combo { top: calc(max(10px, env(safe-area-inset-top)) + 128px); }
 .tl-name { font-family: var(--f-brush); font-size: 30px; letter-spacing: 4px; color: #5a0e08; }
 .tl-lv { font-size: 13px; letter-spacing: 2px; color: #8a5a1a; }
 .tl-desc { flex: 1; display: flex; align-items: center; font-size: 15px; line-height: 1.5; color: #4a1a08; padding: 0 4px; }
+/* 刚弹出时锁定片刻，避免连点发射时误选；下方细条走完即可选择 */
+.choose.locked .talisman { pointer-events: none; cursor: default; }
+.choose.locked .talisman kbd { opacity: .35; }
+.tl-lock { margin-top: 16px; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; letter-spacing: 4px; color: var(--gold); }
+.tl-lock i { display: block; width: 160px; height: 3px; border-radius: 2px; background: rgba(255, 216, 130, .18); overflow: hidden; position: relative; }
+.tl-lock i::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #ff9d3c, #ffe9a0); transform-origin: left; }
+.choose.locked .tl-lock i::after { animation: tlLock var(--lock) linear both; }
+.choose.locked .tl-lock { color: var(--muted); }
+@keyframes tlLock { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .talisman kbd { font-family: var(--f-num); font-weight: 700; font-size: 13px; color: #8a5a1a; border: 1px solid rgba(138, 90, 26, .5); border-radius: 4px; padding: 0 6px; }
 
 .perk-strip { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }

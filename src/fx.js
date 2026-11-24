@@ -61,6 +61,8 @@ export class FX {
   _add(tex, x, y, o) {
     const s = this._sprite(tex);
     if (o.tint != null) s.tint = o.tint;
+    if (o.rot != null) s.rotation = o.rot;
+    if (o.normal) s.blendMode = PIXI.BLEND_MODES.NORMAL;
     const p = Object.assign({ s, x, y, vx: 0, vy: 0, life: 0, max: 0.5, s0: 0.3, s1: 0, a0: 1, drag: 0, grav: 0, spin: 0, ease: false }, o);
     s.position.set(x, y);
     s.scale.set(p.s0);
@@ -111,6 +113,33 @@ export class FX {
       vx: (Math.random() - 0.5) * 40, vy: -80 - Math.random() * 90,
       max: 0.6 + Math.random() * 0.5, s0: 0.25 + Math.random() * 0.25, s1: 0, spin: 4,
     });
+  }
+
+  // 一簇火舌：从 (x,y) 沿 ang 方向喷出（spread 为扇形半角，2π 即四面八方）
+  flames(x, y, n, o = {}) {
+    const { ang = -Math.PI / 2, spread = Math.PI, speed = 420, size = 1, life = 0.45 } = o;
+    n = Math.max(1, Math.round(n * CFG.particles));
+    for (let i = 0; i < n; i++) {
+      const a = ang + (Math.random() * 2 - 1) * spread;
+      const v = speed * (0.5 + Math.random() * 0.7);
+      this._add(TEX.flame, x, y, {
+        tint: Math.random() < 0.3 ? 0xffffff : Math.random() < 0.6 ? 0xffc46a : 0xff7a3a,
+        rot: a + Math.PI / 2, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+        max: life * (0.7 + Math.random() * 0.6), s0: (0.55 + Math.random() * 0.45) * size, s1: 0.15 * size,
+        a0: 0.95, drag: 3.5, grav: -120,
+      });
+    }
+  }
+
+  // 青烟：正常混合，缓缓上升散开
+  smoke(x, y, n = 6, size = 1) {
+    for (let i = 0; i < n; i++) {
+      this._add(TEX.glow, x + (Math.random() - 0.5) * 24 * size, y + (Math.random() - 0.5) * 18 * size, {
+        tint: Math.random() < 0.5 ? 0x4a3a36 : 0x6a5a52, normal: true,
+        vx: (Math.random() - 0.5) * 50, vy: -40 - Math.random() * 60,
+        max: 0.7 + Math.random() * 0.5, s0: 0.35 * size, s1: 0.9 * size, a0: 0.55, drag: 1.5,
+      });
+    }
   }
 
   ring(x, y, tint, size = 1.4, dur = 0.5) {

@@ -1269,6 +1269,69 @@ function scenePreview(sc) {
   SCENE_CANVAS[sc.id] = c;
 }
 
+// 灯火燎原：火珠（熔岩芯 + 流动的亮纹），尺寸与普通珠一致（128 画布、半径 60）
+function fireOrbTex() {
+  const S = 128, C = 64, r = 60;
+  const [c, g] = canvas(S, S);
+  const gr = g.createRadialGradient(C - 12, C - 14, 2, C, C, r);
+  gr.addColorStop(0, '#fffdf0');
+  gr.addColorStop(0.22, '#ffe98a');
+  gr.addColorStop(0.5, '#ffa531');
+  gr.addColorStop(0.8, '#ff4d12');
+  gr.addColorStop(1, '#a01800');
+  g.fillStyle = gr;
+  g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.fill();
+  // 熔岩亮纹：在球面内盘旋的几道曲线
+  g.save();
+  g.beginPath(); g.arc(C, C, r - 2, 0, Math.PI * 2); g.clip();
+  g.globalCompositeOperation = 'lighter';
+  g.lineCap = 'round';
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2 + 0.4;
+    const r0 = 10 + (i % 3) * 8, r1 = 44 + (i % 2) * 12;
+    g.strokeStyle = i % 2 ? 'rgba(255,240,170,0.55)' : 'rgba(255,170,60,0.6)';
+    g.lineWidth = 3 + (i % 3);
+    g.beginPath();
+    g.moveTo(C + Math.cos(a) * r0, C + Math.sin(a) * r0);
+    g.quadraticCurveTo(C + Math.cos(a + 0.9) * (r1 * 0.8), C + Math.sin(a + 0.9) * (r1 * 0.8), C + Math.cos(a + 1.5) * r1, C + Math.sin(a + 1.5) * r1);
+    g.stroke();
+  }
+  g.restore();
+  // 外缘一圈暗红勾边 + 内圈金边，保证在亮背景上也看得出是颗球
+  g.strokeStyle = 'rgba(90,10,0,0.8)'; g.lineWidth = 3;
+  g.beginPath(); g.arc(C, C, r - 1.5, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = 'rgba(255,220,130,0.7)'; g.lineWidth = 2;
+  g.beginPath(); g.arc(C, C, r - 5, 0, Math.PI * 2); g.stroke();
+  return PIXI.Texture.from(c);
+}
+
+// 火舌：尖头朝上的水滴形，底部最亮；锚点放在底部圆心附近使用
+function flameTex() {
+  const W = 64, H = 128;
+  const [c, g] = canvas(W, H);
+  const shape = (k) => {
+    const cx = W / 2, by = H - 30, br = 24 * k;
+    g.beginPath();
+    g.moveTo(cx, H - (H - 4) * k - 26 * (1 - k));
+    g.bezierCurveTo(cx + 10 * k, 46, cx + br + 6, by - 30 * k, cx + br, by);
+    g.arc(cx, by, br, 0, Math.PI);
+    g.bezierCurveTo(cx - br - 6, by - 30 * k, cx - 10 * k, 46, cx, H - (H - 4) * k - 26 * (1 - k));
+    g.closePath();
+  };
+  const lg = g.createLinearGradient(0, 0, 0, H);
+  lg.addColorStop(0, 'rgba(255,60,10,0)');
+  lg.addColorStop(0.3, 'rgba(255,90,20,0.7)');
+  lg.addColorStop(0.65, 'rgba(255,170,50,0.95)');
+  lg.addColorStop(1, 'rgba(255,220,120,1)');
+  g.fillStyle = lg; shape(1); g.fill();
+  const ig = g.createLinearGradient(0, 30, 0, H);
+  ig.addColorStop(0, 'rgba(255,240,180,0)');
+  ig.addColorStop(0.6, 'rgba(255,245,200,0.8)');
+  ig.addColorStop(1, 'rgba(255,255,240,1)');
+  g.fillStyle = ig; shape(0.55); g.fill();
+  return PIXI.Texture.from(c);
+}
+
 export function buildTextures() {
   TEX.ballSets = {};
   for (const sk of BALL_SKINS) TEX.ballSets[sk.id] = COLORS.map((col, i) => ballTex(col, sk.id, i));
@@ -1288,4 +1351,6 @@ export function buildTextures() {
   TEX.bg = bgTex();
   TEX.boss = bossTex();
   TEX.ink = inkTex();
+  TEX.fireOrb = fireOrbTex();
+  TEX.flame = flameTex();
 }
